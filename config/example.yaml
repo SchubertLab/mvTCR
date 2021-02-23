@@ -1,0 +1,16 @@
+seq_model_arch: dummy
+seq_model_hyperparams:
+  stride: 1
+  pad: 1
+  kernel_size: 3
+
+zdim: 32
+hdim: 256
+activation: relu
+output_activation: linear
+dropout: 0.2
+batch_norm: True
+gene_hidden:
+  - 512
+shared_hidden:
+  - 64
