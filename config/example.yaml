@@ -4,7 +4,7 @@ seq_model_hyperparams:
   pad: 1
   kernel_size: 3
 
-zdim: 32
+zdim: 16
 hdim: 256
 activation: relu
 output_activation: linear

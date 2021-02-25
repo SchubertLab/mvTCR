@@ -127,7 +127,7 @@ class JointModel():
 									 dropout, batch_norm, seq_model_arch, seq_model_hyperparams)
 
 	def train(self,
-			  experiment_name='no_name',
+			  experiment_name='example',
 			  n_iters=None,
 			  n_epochs=100,
 			  batch_size=64,
@@ -135,14 +135,15 @@ class JointModel():
 			  losses=['MSE', 'CE'],
 			  loss_weights=[],
 			  val_split=0.1,
+			  metadata=[],
 			  validate_every=10,
 			  print_every=10,
 			  num_workers=0,
 			  verbose=1,
 			  ):
 
-		# Initialize Data
-		train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split)
+		# Initialize dataloader
+		train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
 		train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, collate_fn=None, num_workers=num_workers)
 		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
 
@@ -185,15 +186,14 @@ class JointModel():
 
 		best_loss = 99999999999
 		for e in tqdm(range(n_epochs), 'Epoch: '):
-
 			# TRAIN LOOP
 			loss_total = 0
 			scRNA_loss_total = 0
 			TCR_loss_total = 0
 			KLD_loss_total = 0
-			for scRNA, tcr_seq, name, index in train_dataloader:
+			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in train_dataloader:
 				scRNA = scRNA.to(self.device)
-				# tcr_seq = tcr_seq.to(self.device)  TODO uncomment after TCR sequence representation works
+				tcr_seq = tcr_seq.to(self.device)
 
 				if self.seq_model_arch == 'dummy':  # dummy model takes in scRNA instead of tcr_seq, just for debugging
 					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
@@ -244,9 +244,9 @@ class JointModel():
 					TCR_loss_total = 0
 					KLD_loss_total = 0
 
-					for scRNA, tcr_seq, name, index in val_dataloader:
+					for scRNA, tcr_seq, name, index, seq_len, metadata_batch in val_dataloader:
 						scRNA = scRNA.to(self.device)
-						# tcr_seq = tcr_seq.to(self.device)  TODO uncomment after TCR sequence representation works
+						tcr_seq = tcr_seq.to(self.device)
 
 						if self.seq_model_arch == 'dummy':
 							z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
@@ -286,7 +286,7 @@ class JointModel():
 						best_loss = val_loss
 						torch.save(self.model.state_dict(), f'../saved_models/{experiment_name}_best_model.pt')
 
-	def predict(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[]):
+	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[]):
 		if len(seq_keys) == 0:
 			seq_keys = ['tcr_seq'] * len(adatas)
 		else:
@@ -297,16 +297,16 @@ class JointModel():
 		else:
 			gene_layers = gene_layers
 
-		pred_datasets, _ = self.create_datasets(adatas, names, gene_layers, seq_keys, val_split=0)
+		pred_datasets, _ = self.create_datasets(adatas, names, gene_layers, seq_keys, val_split=0, metadata=metadata)
 		pred_dataloader = DataLoader(pred_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
 
 		zs = []
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
 			self.model.eval()
-			for scRNA, tcr_seq, name, index in tqdm(pred_dataloader, 'Batch: '):
+			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in tqdm(pred_dataloader, 'Batch: '):
 				scRNA = scRNA.to(self.device)
-				# tcr_seq = tcr_seq.to(self.device)  TODO uncomment after TCR sequence representation works
+				tcr_seq = tcr_seq.to(self.device)
 
 				if self.seq_model_arch == 'dummy':
 					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
@@ -315,21 +315,26 @@ class JointModel():
 				z = sc.AnnData(z.detach().cpu().numpy())
 				z.obs['barcode'] = index
 				z.obs['dataset'] = name
+				z.obs[metadata] = np.array(metadata_batch).T
 				zs.append(z)
 
 		return sc.AnnData.concatenate(*zs)
 
-	def create_datasets(self, adatas, names, layers, seq_keys, val_split):
+	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[]):
 		dataset_names_train = []
 		dataset_names_val = []
 		scRNA_datas_train = []
 		scRNA_datas_val = []
 		seq_datas_train = []
 		seq_datas_val = []
+		seq_len_train = []
+		seq_len_val = []
 		adatas_train = {}
 		adatas_val = {}
 		index_train = []
 		index_val = []
+		metadata_train = []
+		metadata_val = []
 
 		# Iterates through datasets with corresponding dataset name, scRNA layer and TCR column key
 		# Splits everything into train and val
@@ -351,6 +356,9 @@ class JointModel():
 			seq_datas_train.append(adata.obs[seq_key][train_mask])
 			seq_datas_val.append(adata.obs[seq_key][~train_mask])
 
+			seq_len_train += adata.obs['seq_len'][train_mask].to_list()
+			seq_len_val += adata.obs['seq_len'][~train_mask].to_list()
+
 			adatas_train[name] = adata[train_mask]
 			adatas_val[name] = adata[~train_mask]
 
@@ -360,8 +368,11 @@ class JointModel():
 			index_train += adata[train_mask].obs.index.to_list()
 			index_val += adata[~train_mask].obs.index.to_list()
 
-		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, adatas_train, dataset_names_train, index_train)
-		val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, adatas_val, dataset_names_val, index_val)
+			metadata_train.append(adata.obs[metadata][train_mask].values)
+			metadata_val.append(adata.obs[metadata][~train_mask].values)
+
+		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, seq_len_train, adatas_train, dataset_names_train, index_train, metadata_train)
+		val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val, index_val, metadata_val)
 
 		return train_dataset, val_dataset
 
