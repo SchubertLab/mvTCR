@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None):
+def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
 	"""
 	Encoding of protein or nucleotide sequence inplace, either one-hot-encoded or as index labels and/or one-hot-encoding
 	:param adata: adata file
@@ -12,10 +12,16 @@ def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, 
 	:param pad: bool or int value, if int value then the sequence will be pad to this value,
 				if True then pad_len will be determined by taking the longest sequence length in adata
 	:param aa_to_id: None or dict, None will create a dict in this code, dict should contain {aa: index}
+	:param start_end_symbol: bool, add a start '<' and end '>' symbol to each sequence
 	:return:
 	"""
 	if label_col is None and ohe_col is None:
 		raise AssertionError('Specify at least one column to write: ohe_col or label_col')
+
+	if start_end_symbol:
+		adata.obs[read_col] = '<' + adata.obs[read_col].astype('str') + '>'
+		if type(pad) is int:
+			pad += 2
 
 	if length_col:
 		adata.obs[length_col] = adata.obs[read_col].str.len()
