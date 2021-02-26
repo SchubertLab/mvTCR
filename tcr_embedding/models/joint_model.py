@@ -18,23 +18,15 @@ from .losses.kld import KLD
 
 
 class JointModelTorch(nn.Module):
-	def __init__(self, xdim, hdim, zdim, gene_hidden, shared_hidden, activation, output_activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams):
+	def __init__(self, xdim, hdim, zdim, num_seq_labels, gene_hidden, shared_hidden, activation, output_activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams):
 		super(JointModelTorch, self).__init__()
 
-		if seq_model_arch == 'CNN':
-			self.seq_encoder = CNNEncoder(seq_model_hyperparams, hdim)
-			self.seq_decoder = CNNDecoder(seq_model_hyperparams, hdim)
-		elif seq_model_arch == 'Transformer':
-			self.seq_encoder = TransformerEncoder(seq_model_hyperparams, hdim)
-			self.seq_decoder = TransformerDecoder(seq_model_hyperparams, hdim)
-		elif seq_model_arch == 'BiGRU':
-			self.seq_encoder = BiGRUEncoder(seq_model_hyperparams, hdim)
-			self.seq_decoder = BiGRUDecoder(seq_model_hyperparams, hdim)
-		elif seq_model_arch == 'dummy':  # TODO dummy model, used before we have sequence representation, takes in scRNA data instead
-			self.seq_encoder = MLP(xdim, hdim, gene_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=True)
-			self.seq_decoder = MLP(hdim*2, xdim, gene_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=False)
-		else:
-			raise ValueError('Sequence architecture currently not supported, please try one of the following ["CNN", "Transformer", "BiGRU"]')
+		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
+					  'Transformer': [TransformerEncoder, TransformerDecoder],
+					  'BiGRU': [BiGRUEncoder, BiGRUDecoder]}
+
+		self.seq_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim, num_seq_labels)
+		self.seq_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*2, num_seq_labels)
 
 		self.gene_encoder = MLP(xdim, hdim, gene_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=True)
 		self.shared_encoder = MLP(hdim*2, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
@@ -42,7 +34,7 @@ class JointModelTorch(nn.Module):
 		self.shared_decoder = MLP(zdim, hdim*2, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 		self.gene_decoder = MLP(hdim*2, xdim, gene_hidden[::-1], activation, output_activation, dropout, batch_norm, regularize_last_layer=False)
 
-	def forward(self, scRNA, tcr_seq):
+	def forward(self, scRNA, tcr_seq, tcr_len):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
@@ -50,7 +42,7 @@ class JointModelTorch(nn.Module):
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 		h_scRNA = self.gene_encoder(scRNA)  # shape=[batch_size, hdim]
-		h_tcr_seq = self.seq_encoder(tcr_seq)  # shape=[batch_size, hdim]
+		h_tcr_seq = self.seq_encoder(tcr_seq, tcr_len)  # shape=[batch_size, hdim]
 
 		joint_feature = torch.cat([h_scRNA, h_tcr_seq], dim=-1)
 		z_ = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
@@ -59,7 +51,7 @@ class JointModelTorch(nn.Module):
 
 		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim*2]
 		scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
-		tcr_seq_pred = self.seq_decoder(joint_dec_feature)
+		tcr_seq_pred = self.seq_decoder(joint_dec_feature, tcr_seq)
 
 		return z, mu, logvar, scRNA_pred, tcr_seq_pred
 
@@ -79,6 +71,7 @@ class JointModel():
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
 				 names,
+				 aa_to_id,
 				 seq_model_arch,  # seq model architecture
 				 seq_model_hyperparams,  # dict of seq model hyperparameters
 				 zdim,  # zdim
@@ -101,6 +94,7 @@ class JointModel():
 		self._train_history = defaultdict(list)
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
+		self.aa_to_id = aa_to_id
 
 		if device is None:
 			self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -122,8 +116,8 @@ class JointModel():
 
 		# assuming now gene expressions between datasets are using the same genes, so input vectors have same length and order, e.g. using inner or outer join
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
-
-		self.model = JointModelTorch(xdim, hdim, zdim, gene_hidden, shared_hidden, activation, output_activation,
+		num_seq_labels = len(aa_to_id)
+		self.model = JointModelTorch(xdim, hdim, zdim, num_seq_labels, gene_hidden, shared_hidden, activation, output_activation,
 									 dropout, batch_norm, seq_model_arch, seq_model_hyperparams)
 
 	def train(self,
@@ -170,7 +164,7 @@ class JointModel():
 			raise ValueError(f'{losses[0]} loss in not implemented')
 
 		if losses[1] == 'CE':
-			TCR_criterion = nn.CrossEntropyLoss()
+			TCR_criterion = nn.CrossEntropyLoss(ignore_index=self.aa_to_id['_'])
 		else:
 			raise ValueError(f'{losses[1]} loss in not implemented')
 
@@ -195,21 +189,14 @@ class JointModel():
 				scRNA = scRNA.to(self.device)
 				tcr_seq = tcr_seq.to(self.device)
 
-				if self.seq_model_arch == 'dummy':  # dummy model takes in scRNA instead of tcr_seq, just for debugging
-					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-					scRNA_loss = scRNA_criterion(scRNA, scRNA_pred)
-					TCR_loss = scRNA_criterion(scRNA, tcr_seq_pred)  # Be careful! This is only for dummy model and usually doesn't make sense
-					KLD_loss = KL_criterion(mu, logvar)
-					loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
-
-				else:   # TODO uncomment after TCR sequence representation works
-					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq)
-
-					scRNA_loss = scRNA_criterion(scRNA, scRNA_pred)
-					TCR_loss = TCR_criterion(tcr_seq, tcr_seq_pred)
-					KLD_loss = KL_criterion(mu, logvar)
-					loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
+				scRNA_loss = scRNA_criterion(scRNA_pred, scRNA)
+				# Before feeding in the gt_seq, the start token needs to get removed.
+				# Further batch and seq dimension needs to be flatten
+				TCR_loss = TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+				KLD_loss = KL_criterion(mu, logvar)
+				loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
 
 				optimizer.zero_grad()
 				loss.backward()
@@ -248,21 +235,13 @@ class JointModel():
 						scRNA = scRNA.to(self.device)
 						tcr_seq = tcr_seq.to(self.device)
 
-						if self.seq_model_arch == 'dummy':
-							z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
+						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-							scRNA_loss = scRNA_criterion(scRNA, scRNA_pred)
-							TCR_loss = scRNA_criterion(scRNA, tcr_seq_pred)  # Be careful! This is only for dummy model and usually doesn't make sense
-							KLD_loss = KL_criterion(mu, logvar)
-							loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
+						scRNA_loss = scRNA_criterion(scRNA_pred, scRNA)
 
-						else:  # TODO uncomment after TCR sequence representation works
-							z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq)
-
-							scRNA_loss = scRNA_criterion(scRNA, scRNA_pred)
-							TCR_loss = TCR_criterion(tcr_seq, tcr_seq_pred)
-							KLD_loss = KL_criterion(mu, logvar)
-							loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
+						TCR_loss = TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+						KLD_loss = KL_criterion(mu, logvar)
+						loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
 
 						val_loss += loss
 						scRNA_loss_total += scRNA_loss
@@ -308,10 +287,7 @@ class JointModel():
 				scRNA = scRNA.to(self.device)
 				tcr_seq = tcr_seq.to(self.device)
 
-				if self.seq_model_arch == 'dummy':
-					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, scRNA)
-				else:  # TODO uncomment after TCR sequence representation works
-					z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq)
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 				z = sc.AnnData(z.detach().cpu().numpy())
 				z.obs['barcode'] = index
 				z.obs['dataset'] = name
