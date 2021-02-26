@@ -15,24 +15,28 @@ from .transformer import TransformerEncoder, TransformerDecoder
 from .mlp import MLP
 from .losses.nb import NB
 from .losses.kld import KLD
-
+from .mlp_scRNA import build_mlp_encoder, build_mlp_decoder
 
 class JointModelTorch(nn.Module):
-	def __init__(self, xdim, hdim, zdim, num_seq_labels, gene_hidden, shared_hidden, activation, output_activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams):
+	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
 		super(JointModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
 					  'Transformer': [TransformerEncoder, TransformerDecoder],
 					  'BiGRU': [BiGRUEncoder, BiGRUDecoder]}
 
+		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder]}
+
 		self.seq_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim, num_seq_labels)
 		self.seq_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*2, num_seq_labels)
 
-		self.gene_encoder = MLP(xdim, hdim, gene_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=True)
-		self.shared_encoder = MLP(hdim*2, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
+		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim)
+		# self.gene_encoder = MLP(xdim, hdim, gene_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		# self.gene_decoder = MLP(hdim*2, xdim, gene_hidden[::-1], activation, output_activation, dropout, batch_norm, regularize_last_layer=False)
 
+		self.shared_encoder = MLP(hdim*2, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
 		self.shared_decoder = MLP(zdim, hdim*2, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
-		self.gene_decoder = MLP(hdim*2, xdim, gene_hidden[::-1], activation, output_activation, dropout, batch_norm, regularize_last_layer=False)
 
 	def forward(self, scRNA, tcr_seq, tcr_len):
 		"""
@@ -74,13 +78,13 @@ class JointModel():
 				 aa_to_id,
 				 seq_model_arch,  # seq model architecture
 				 seq_model_hyperparams,  # dict of seq model hyperparameters
+				 scRNA_model_arch,
+				 scRNA_model_hyperparams,
 				 zdim,  # zdim
 				 hdim,  # hidden dimension of encoder for each modality
 				 activation,
-				 output_activation,
 				 dropout,
 				 batch_norm,
-				 gene_hidden=[],  # hidden layers of gene encoder/ decoder
 				 shared_hidden=[],
 				 gene_layers=[],
 				 seq_keys=[],
@@ -117,8 +121,8 @@ class JointModel():
 		# assuming now gene expressions between datasets are using the same genes, so input vectors have same length and order, e.g. using inner or outer join
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
-		self.model = JointModelTorch(xdim, hdim, zdim, num_seq_labels, gene_hidden, shared_hidden, activation, output_activation,
-									 dropout, batch_norm, seq_model_arch, seq_model_hyperparams)
+		self.model = JointModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
+									 seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
 	def train(self,
 			  experiment_name='example',
