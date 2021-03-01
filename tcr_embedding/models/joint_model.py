@@ -88,7 +88,6 @@ class JointModel():
 				 shared_hidden=[],
 				 gene_layers=[],
 				 seq_keys=[],
-				 device=None  # torch.device
 				 ):
 
 		assert len(adatas) == len(names)
@@ -98,12 +97,12 @@ class JointModel():
 		self._train_history = defaultdict(list)
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
+		self.params = {'seq_model_arch': seq_model_arch, 'seq_model_hyperparams': seq_model_hyperparams,
+					   'scRNA_model_arch': scRNA_model_arch, 'scRNA_model_hyperparams': scRNA_model_hyperparams,
+					   'zdim': zdim, 'hdim': hdim, 'activation': activation, 'dropout': dropout, 'batch_norm': batch_norm,
+					   'shared_hidden': shared_hidden}
 		self.aa_to_id = aa_to_id
-
-		if device is None:
-			self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-		else:
-			self.device = device
+		self.epoch = 0
 
 		self.adatas = adatas
 		self.names = names
@@ -138,7 +137,12 @@ class JointModel():
 			  print_every=10,
 			  num_workers=0,
 			  verbose=1,
+			  continue_path=False,
+			  device=None
 			  ):
+
+		if device is None:
+			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 		# Initialize dataloader
 		train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
@@ -174,37 +178,42 @@ class JointModel():
 
 		KL_criterion = KLD()
 
-		optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-
-		self.model = self.model.to(self.device)
+		self.model = self.model.to(device)
 		self.model.train()
+
+		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
+
+		if continue_path:
+			# Load model and optimizer state_dict, as well as epoch and history
+			self.load(continue_path)
 
 		if n_iters is not None:
 			n_epochs = n_iters // len(train_dataloader)
 
 		best_loss = 99999999999
-		for e in tqdm(range(n_epochs), 'Epoch: '):
+		for e in tqdm(range(self.epoch, n_epochs), 'Epoch: '):
+			self.epoch = e
 			# TRAIN LOOP
 			loss_total = 0
 			scRNA_loss_total = 0
 			TCR_loss_total = 0
 			KLD_loss_total = 0
 			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in train_dataloader:
-				scRNA = scRNA.to(self.device)
-				tcr_seq = tcr_seq.to(self.device)
+				scRNA = scRNA.to(device)
+				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-				scRNA_loss = scRNA_criterion(scRNA_pred, scRNA)
+				scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
 				# Before feeding in the gt_seq, the start token needs to get removed.
 				# Further batch and seq dimension needs to be flatten
-				TCR_loss = TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
-				KLD_loss = KL_criterion(mu, logvar)
-				loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
+				TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
+				loss = scRNA_loss + TCR_loss + KLD_loss
 
-				optimizer.zero_grad()
+				self.optimizer.zero_grad()
 				loss.backward()
-				optimizer.step()
+				self.optimizer.step()
 
 				loss_total += loss.detach()
 				scRNA_loss_total += scRNA_loss.detach()
@@ -215,12 +224,14 @@ class JointModel():
 
 			if e % print_every == 0:
 				self._train_history['epoch'].append(e)
-				self._train_history['loss'].append(loss.detach().item())
-				self._train_history['scRNA_loss'].append(scRNA_loss_total.item())
-				self._train_history['TCR_loss'].append(TCR_loss_total.item())
-				self._train_history['KLD_loss'].append(KLD_loss_total.item())
+				self._train_history['loss'].append(loss_total.detach().item() / len(train_dataloader))
+				self._train_history['scRNA_loss'].append(scRNA_loss_total.item() / len(train_dataloader))
+				self._train_history['TCR_loss'].append(TCR_loss_total.item() / len(train_dataloader))
+				self._train_history['KLD_loss'].append(KLD_loss_total.item() / len(train_dataloader))
 
+				self.save(f'../saved_models/{experiment_name}_last_model.pt')
 				if verbose >= 2:
+					print('\n')
 					print(f'Train Loss: {loss_total / len(train_dataloader)}')
 					print(f'Train scRNA Loss: {scRNA_loss_total / len(train_dataloader)}')
 					print(f'Train TCR Loss: {TCR_loss_total / len(train_dataloader)}')
@@ -236,16 +247,15 @@ class JointModel():
 					KLD_loss_total = 0
 
 					for scRNA, tcr_seq, name, index, seq_len, metadata_batch in val_dataloader:
-						scRNA = scRNA.to(self.device)
-						tcr_seq = tcr_seq.to(self.device)
+						scRNA = scRNA.to(device)
+						tcr_seq = tcr_seq.to(device)
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-						scRNA_loss = scRNA_criterion(scRNA_pred, scRNA)
-
-						TCR_loss = TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
-						KLD_loss = KL_criterion(mu, logvar)
-						loss = loss_weights[0] * scRNA_loss + loss_weights[1] * TCR_loss + loss_weights[2] * KLD_loss
+						scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+						TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
+						loss = scRNA_loss + TCR_loss + KLD_loss
 
 						val_loss += loss
 						scRNA_loss_total += scRNA_loss
@@ -255,11 +265,12 @@ class JointModel():
 					self.model.train()
 
 					self._val_history['epoch'].append(e)
-					self._val_history['loss'].append(val_loss.item())
-					self._val_history['scRNA_loss'].append(scRNA_loss_total.item())
-					self._val_history['TCR_loss'].append(TCR_loss_total.item())
-					self._val_history['KLD_loss'].append(KLD_loss_total.item())
+					self._val_history['loss'].append(val_loss.item() / len(val_dataloader))
+					self._val_history['scRNA_loss'].append(scRNA_loss_total.item() / len(val_dataloader))
+					self._val_history['TCR_loss'].append(TCR_loss_total.item() / len(val_dataloader))
+					self._val_history['KLD_loss'].append(KLD_loss_total.item() / len(val_dataloader))
 					if verbose >= 1:
+						print('\n')
 						print(f'Val Loss: {val_loss / len(val_dataloader)}')
 						print(f'Val scRNA Loss: {scRNA_loss_total / len(val_dataloader)}')
 						print(f'Val TCR Loss: {TCR_loss_total / len(val_dataloader)}')
@@ -267,9 +278,12 @@ class JointModel():
 
 					if val_loss < best_loss:
 						best_loss = val_loss
-						torch.save(self.model.state_dict(), f'../saved_models/{experiment_name}_best_model.pt')
+						self.save(f'../saved_models/{experiment_name}_best_model.pt')
 
-	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[]):
+	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[], device=None):
+		if device is None:
+			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 		if len(seq_keys) == 0:
 			seq_keys = ['tcr_seq'] * len(adatas)
 		else:
@@ -285,11 +299,11 @@ class JointModel():
 
 		zs = []
 		with torch.no_grad():
-			self.model = self.model.to(self.device)
+			self.model = self.model.to(device)
 			self.model.eval()
 			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in tqdm(pred_dataloader, 'Batch: '):
-				scRNA = scRNA.to(self.device)
-				tcr_seq = tcr_seq.to(self.device)
+				scRNA = scRNA.to(device)
+				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 				z = sc.AnnData(z.detach().cpu().numpy())
@@ -360,9 +374,36 @@ class JointModel():
 	def history(self):
 		return pd.DataFrame(self._val_history)
 
+	@property
+	def train_history(self):
+		return pd.DataFrame(self._train_history)
+
 	def save(self, filepath):
-		torch.save({'weights': self.model.state_dict()}, filepath)
+		state_dict = {'state_dict': self.model.state_dict(),
+					'train_history': self._train_history,
+					'val_history': self._val_history,
+					'epoch': self.epoch,
+					'aa_to_id': self.aa_to_id,
+					'data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
+					'params': self.params}
+		try:
+			state_dict['optimizer'] = self.optimizer.state_dict()
+		except:
+			pass
+		torch.save(state_dict, filepath)
 
 	def load(self, filepath):
-		model_file = torch.load(os.path.join(filepath), map_location=self.device)
+		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
 		self.model.load_state_dict(model_file['state_dict'])
+		self._train_history = model_file['train_history']
+		self._val_history = model_file['val_history']
+		self.epoch = model_file['epoch']
+		self.aa_to_id = model_file['aa_to_id']
+		try:
+			self.optimizer.load_state_dict(model_file['optimizer'])
+		except:
+			pass
+
+	def load_data(self, filepath):
+		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
+		self.adatas, self.names, self.gene_layers, self.seq_keys = model_file['data']
