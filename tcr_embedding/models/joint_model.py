@@ -7,6 +7,7 @@ from tqdm import tqdm
 from collections import defaultdict
 import pandas as pd
 import scanpy as sc
+from sklearn.neighbors import KNeighborsClassifier
 
 from tcr_embedding.datasets.scdataset import TCRDataset
 from .cnn import CNNEncoder, CNNDecoder
@@ -16,6 +17,7 @@ from .mlp import MLP
 from .losses.nb import NB
 from .losses.kld import KLD
 from .mlp_scRNA import build_mlp_encoder, build_mlp_decoder
+
 
 class JointModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
@@ -32,8 +34,6 @@ class JointModelTorch(nn.Module):
 
 		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
 		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim)
-		# self.gene_encoder = MLP(xdim, hdim, gene_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=True)
-		# self.gene_decoder = MLP(hdim*2, xdim, gene_hidden[::-1], activation, output_activation, dropout, batch_norm, regularize_last_layer=False)
 
 		self.shared_encoder = MLP(hdim*2, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
 		self.shared_decoder = MLP(zdim, hdim*2, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
@@ -87,7 +87,7 @@ class JointModel():
 				 batch_norm,
 				 shared_hidden=[],
 				 gene_layers=[],
-				 seq_keys=[],
+				 seq_keys=[]
 				 ):
 
 		assert len(adatas) == len(names)
@@ -137,15 +137,21 @@ class JointModel():
 			  print_every=10,
 			  num_workers=0,
 			  verbose=1,
-			  continue_path=False,
-			  device=None
+			  continue_training=False,
+			  device=None,
+			  comet=None
 			  ):
 
 		if device is None:
 			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 		# Initialize dataloader
-		train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
+		if continue_training:
+			train_datasets, val_datasets = self.load_data(f'../saved_models/{experiment_name}_data.pt')
+		else:
+			train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
+			self.save_data(f'../saved_models/{experiment_name}_data.pt', train_datasets, val_datasets)
+
 		train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, collate_fn=None, num_workers=num_workers)
 		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
 
@@ -183,21 +189,21 @@ class JointModel():
 
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
 
-		if continue_path:
-			# Load model and optimizer state_dict, as well as epoch and history
-			self.load(continue_path)
+		self.best_loss = 99999999999
 
 		if n_iters is not None:
 			n_epochs = n_iters // len(train_dataloader)
 
-		best_loss = 99999999999
+		if continue_training:
+			# Load model and optimizer state_dict, as well as epoch and history
+			self.load(f'../saved_models/{experiment_name}_last_model.pt')
 		for e in tqdm(range(self.epoch, n_epochs), 'Epoch: '):
 			self.epoch = e
 			# TRAIN LOOP
-			loss_total = 0
-			scRNA_loss_total = 0
-			TCR_loss_total = 0
-			KLD_loss_total = 0
+			loss_train_total = []
+			scRNA_loss_train_total = []
+			TCR_loss_train_total = []
+			KLD_loss_train_total = []
 			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
@@ -215,36 +221,46 @@ class JointModel():
 				loss.backward()
 				self.optimizer.step()
 
-				loss_total += loss.detach()
-				scRNA_loss_total += scRNA_loss.detach()
-				TCR_loss_total += TCR_loss.detach()
-				KLD_loss_total += KLD_loss.detach()
+				loss_train_total.append(loss.detach())
+				scRNA_loss_train_total.append(scRNA_loss.detach())
+				TCR_loss_train_total.append(TCR_loss.detach())
+				KLD_loss_train_total.append(KLD_loss.detach())
 
 				# some more metric
 
 			if e % print_every == 0:
-				self._train_history['epoch'].append(e)
-				self._train_history['loss'].append(loss_total.detach().item() / len(train_dataloader))
-				self._train_history['scRNA_loss'].append(scRNA_loss_total.item() / len(train_dataloader))
-				self._train_history['TCR_loss'].append(TCR_loss_total.item() / len(train_dataloader))
-				self._train_history['KLD_loss'].append(KLD_loss_total.item() / len(train_dataloader))
+				loss_train_total = torch.stack(loss_train_total).mean().item()
+				scRNA_loss_train_total = torch.stack(scRNA_loss_train_total).mean().item()
+				TCR_loss_train_total = torch.stack(TCR_loss_train_total).mean().item()
+				KLD_loss_train_total = torch.stack(KLD_loss_train_total).mean().item()
 
-				self.save(f'../saved_models/{experiment_name}_last_model.pt')
+				self._train_history['epoch'].append(e)
+				self._train_history['loss'].append(loss_train_total)
+				self._train_history['scRNA_loss'].append(scRNA_loss_train_total)
+				self._train_history['TCR_loss'].append(TCR_loss_train_total)
+				self._train_history['KLD_loss'].append(KLD_loss_train_total)
+
 				if verbose >= 2:
 					print('\n')
-					print(f'Train Loss: {loss_total / len(train_dataloader)}')
-					print(f'Train scRNA Loss: {scRNA_loss_total / len(train_dataloader)}')
-					print(f'Train TCR Loss: {TCR_loss_total / len(train_dataloader)}')
-					print(f'Train KLD Loss: {KLD_loss_total / len(train_dataloader)}\n')
+					print(f'Train Loss: {loss_train_total}')
+					print(f'Train scRNA Loss: {scRNA_loss_train_total}')
+					print(f'Train TCR Loss: {TCR_loss_train_total}')
+					print(f'Train KLD Loss: {KLD_loss_train_total}\n')
+				if comet is not None:
+					comet.log_metrics({'Train Loss': loss_train_total,
+									   'Train scRNA Loss': scRNA_loss_train_total,
+									   'Train TCR Loss': TCR_loss_train_total,
+									   'Train KLD Loss': KLD_loss_train_total},
+									  step=e, epoch=e)
 
 			# VALIDATION LOOP
 			if e % validate_every == 0:
 				with torch.no_grad():
 					self.model.eval()
-					val_loss = 0
-					scRNA_loss_total = 0
-					TCR_loss_total = 0
-					KLD_loss_total = 0
+					loss_val_total = []
+					scRNA_loss_val_total = []
+					TCR_loss_val_total = []
+					KLD_loss_val_total = []
 
 					for scRNA, tcr_seq, name, index, seq_len, metadata_batch in val_dataloader:
 						scRNA = scRNA.to(device)
@@ -257,28 +273,43 @@ class JointModel():
 						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
 						loss = scRNA_loss + TCR_loss + KLD_loss
 
-						val_loss += loss
-						scRNA_loss_total += scRNA_loss
-						TCR_loss_total += TCR_loss
-						KLD_loss_total += KLD_loss
+						loss_val_total.append(loss)
+						scRNA_loss_val_total.append(scRNA_loss)
+						TCR_loss_val_total.append(TCR_loss)
+						KLD_loss_val_total.append(KLD_loss)
 
 					self.model.train()
 
+					loss_val_total = torch.stack(loss_val_total).mean().item()
+					scRNA_loss_val_total = torch.stack(scRNA_loss_val_total).mean().item()
+					TCR_loss_val_total = torch.stack(TCR_loss_val_total).mean().item()
+					KLD_loss_val_total = torch.stack(KLD_loss_val_total).mean().item()
+
 					self._val_history['epoch'].append(e)
-					self._val_history['loss'].append(val_loss.item() / len(val_dataloader))
-					self._val_history['scRNA_loss'].append(scRNA_loss_total.item() / len(val_dataloader))
-					self._val_history['TCR_loss'].append(TCR_loss_total.item() / len(val_dataloader))
-					self._val_history['KLD_loss'].append(KLD_loss_total.item() / len(val_dataloader))
+					self._val_history['loss'].append(loss_val_total)
+					self._val_history['scRNA_loss'].append(scRNA_loss_val_total)
+					self._val_history['TCR_loss'].append(TCR_loss_val_total)
+					self._val_history['KLD_loss'].append(KLD_loss_val_total)
 					if verbose >= 1:
 						print('\n')
-						print(f'Val Loss: {val_loss / len(val_dataloader)}')
-						print(f'Val scRNA Loss: {scRNA_loss_total / len(val_dataloader)}')
-						print(f'Val TCR Loss: {TCR_loss_total / len(val_dataloader)}')
-						print(f'Val KLD Loss: {KLD_loss_total / len(val_dataloader)}')
+						print(f'Val Loss: {loss_val_total}')
+						print(f'Val scRNA Loss: {scRNA_loss_val_total}')
+						print(f'Val TCR Loss: {TCR_loss_val_total}')
+						print(f'Val KLD Loss: {KLD_loss_val_total}')
 
-					if val_loss < best_loss:
-						best_loss = val_loss
+					if comet is not None:
+						comet.log_metrics({'Val Loss': loss_val_total,
+										   'Val scRNA Loss': scRNA_loss_val_total,
+										   'Val TCR Loss': TCR_loss_val_total,
+										   'Val KLD Loss': KLD_loss_val_total},
+										  step=e, epoch=e)
+
+					if loss_val_total < self.best_loss:
+						self.best_loss = loss_val_total
 						self.save(f'../saved_models/{experiment_name}_best_model.pt')
+
+			if e % print_every == 0:
+				self.save(f'../saved_models/{experiment_name}_last_model.pt')
 
 	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[], device=None):
 		if device is None:
@@ -313,6 +344,29 @@ class JointModel():
 				zs.append(z)
 
 		return sc.AnnData.concatenate(*zs)
+
+	def kNN(self, train_data, test_data, classes, n_neighbors, weights='distance'):
+		"""
+		Perform kNN using scikit-learn package
+		:param train_data: annData with features in X and class labels in train_data.obs[classes]
+		:param test_data: annData with features in X
+		:param classes: key for class labels in train_data.obs[classes]
+		:param n_neighbors: number of neighbors for kNN
+		:param weights: kNN weights, either 'distance' or 'uniform'
+		:return:
+		"""
+		clf = KNeighborsClassifier(n_neighbors, weights)
+		X_train = train_data.X
+
+		# Create categorical labels
+		train_data.obs[classes + '_label'] = train_data.obs[classes].astype('category').cat.codes
+		mapping = dict(enumerate(train_data.obs[classes].astype('category').cat.categories))
+		y_train = train_data.obs[classes + '_label'].values
+
+		clf.fit(X_train, y_train)
+
+		test_data.obs['pred_labels'] = clf.predict(test_data.X)
+		test_data.obs['pred_' + classes] = test_data.obs['pred_labels'].map(mapping)
 
 	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[]):
 		dataset_names_train = []
@@ -379,18 +433,18 @@ class JointModel():
 		return pd.DataFrame(self._train_history)
 
 	def save(self, filepath):
-		state_dict = {'state_dict': self.model.state_dict(),
+		model_file = {'state_dict': self.model.state_dict(),
 					'train_history': self._train_history,
 					'val_history': self._val_history,
-					'epoch': self.epoch,
+					'epoch': self.epoch + 1,
 					'aa_to_id': self.aa_to_id,
-					'data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
-					'params': self.params}
+					'params': self.params,
+					'best_loss': self.best_loss}
 		try:
-			state_dict['optimizer'] = self.optimizer.state_dict()
+			model_file['optimizer'] = self.optimizer.state_dict()
 		except:
 			pass
-		torch.save(state_dict, filepath)
+		torch.save(model_file, filepath)
 
 	def load(self, filepath):
 		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
@@ -399,11 +453,19 @@ class JointModel():
 		self._val_history = model_file['val_history']
 		self.epoch = model_file['epoch']
 		self.aa_to_id = model_file['aa_to_id']
+		self.best_loss = model_file['best_loss']
 		try:
 			self.optimizer.load_state_dict(model_file['optimizer'])
 		except:
 			pass
 
+	def save_data(self, filepath, train_dataset, val_dataset):
+		data = {'raw_data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
+				'dataset': [train_dataset, val_dataset]}
+		torch.save(data, filepath)
+
 	def load_data(self, filepath):
-		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
-		self.adatas, self.names, self.gene_layers, self.seq_keys = model_file['data']
+		data_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
+		self.adatas, self.names, self.gene_layers, self.seq_keys = data_file['raw_data']
+		# it returns [train_dataset, val_dataset]
+		return data_file['dataset']

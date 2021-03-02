@@ -1,7 +1,7 @@
 ## All-in-one-line:
 ### Create environment and install packages
 
-`conda create --name tcr python=3.8 -y && conda activate tcr && conda install seaborn scikit-learn statsmodels numba pytables nb_conda_kernels -y && conda install -c conda-forge python-igraph leidenalg -y && pip install scanpy scirpy && conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch -y`
+`conda create --name tcr python=3.8 -y && conda activate tcr && conda install seaborn scikit-learn statsmodels numba pytables nb_conda_kernels -y && conda install -c conda-forge python-igraph leidenalg -y && pip install scanpy scirpy comet-ml && conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch -y`
 
 ### Fix some bugs (on Windows):
 
@@ -16,7 +16,7 @@
 
 `conda install -c conda-forge python-igraph leidenalg`
 
-`pip install scanpy scirpy`
+`pip install scanpy scirpy comet-ml`
 
 `conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch`
 
