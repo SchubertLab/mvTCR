@@ -102,7 +102,6 @@ class JointModel():
 					   'zdim': zdim, 'hdim': hdim, 'activation': activation, 'dropout': dropout, 'batch_norm': batch_norm,
 					   'shared_hidden': shared_hidden}
 		self.aa_to_id = aa_to_id
-		self.epoch = 0
 
 		self.adatas = adatas
 		self.names = names
@@ -135,6 +134,7 @@ class JointModel():
 			  metadata=[],
 			  validate_every=10,
 			  print_every=10,
+			  save_every=100,
 			  num_workers=0,
 			  verbose=1,
 			  continue_training=False,
@@ -145,15 +145,18 @@ class JointModel():
 		if device is None:
 			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+		print('Create Dataloader')
 		# Initialize dataloader
 		if continue_training:
-			train_datasets, val_datasets = self.load_data(f'../saved_models/{experiment_name}_data.pt')
+			train_masks = self.load_data(f'../saved_models/{experiment_name}_data.pt')
+			train_datasets, val_datasets, _ = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, train_masks)
 		else:
-			train_datasets, val_datasets = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
-			self.save_data(f'../saved_models/{experiment_name}_data.pt', train_datasets, val_datasets)
+			train_datasets, val_datasets, train_masks = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
+			self.save_data(f'../saved_models/{experiment_name}_data.pt', train_masks)
 
 		train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, collate_fn=None, num_workers=num_workers)
 		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
+		print('Dataloader created')
 
 		try:
 			os.makedirs('../saved_models/')  # Create directory to prevent Error while saving model weights
@@ -190,6 +193,7 @@ class JointModel():
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
 
 		self.best_loss = 99999999999
+		self.epoch = 0
 
 		if n_iters is not None:
 			n_epochs = n_iters // len(train_dataloader)
@@ -197,6 +201,8 @@ class JointModel():
 		if continue_training:
 			# Load model and optimizer state_dict, as well as epoch and history
 			self.load(f'../saved_models/{experiment_name}_last_model.pt')
+			print(f'Continue training from epoch {self.epoch}')
+
 		for e in tqdm(range(self.epoch, n_epochs), 'Epoch: '):
 			self.epoch = e
 			# TRAIN LOOP
@@ -311,6 +317,9 @@ class JointModel():
 			if e % print_every == 0:
 				self.save(f'../saved_models/{experiment_name}_last_model.pt')
 
+			if e % save_every == 0:
+				self.save(f'../saved_models/{experiment_name}_epoch_{str(e).zfill(3)}.pt')
+
 	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[], device=None):
 		if device is None:
 			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -325,7 +334,7 @@ class JointModel():
 		else:
 			gene_layers = gene_layers
 
-		pred_datasets, _ = self.create_datasets(adatas, names, gene_layers, seq_keys, val_split=0, metadata=metadata)
+		pred_datasets, _, _ = self.create_datasets(adatas, names, gene_layers, seq_keys, val_split=0, metadata=metadata)
 		pred_dataloader = DataLoader(pred_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
 
 		zs = []
@@ -353,7 +362,7 @@ class JointModel():
 		:param classes: key for class labels in train_data.obs[classes]
 		:param n_neighbors: number of neighbors for kNN
 		:param weights: kNN weights, either 'distance' or 'uniform'
-		:return:
+		:return: Writes results into the column test_data.obs['pred_' + classes]
 		"""
 		clf = KNeighborsClassifier(n_neighbors, weights)
 		X_train = train_data.X
@@ -368,7 +377,7 @@ class JointModel():
 		test_data.obs['pred_labels'] = clf.predict(test_data.X)
 		test_data.obs['pred_' + classes] = test_data.obs['pred_labels'].map(mapping)
 
-	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[]):
+	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None):
 		dataset_names_train = []
 		dataset_names_val = []
 		scRNA_datas_train = []
@@ -384,18 +393,28 @@ class JointModel():
 		metadata_train = []
 		metadata_val = []
 
+		if train_masks is None:
+			masks_exist = False
+			train_masks = {}
+		else:
+			masks_exist = True
+
 		# Iterates through datasets with corresponding dataset name, scRNA layer and TCR column key
 		# Splits everything into train and val
 		for i, (name, adata, layer, seq_key) in enumerate(zip(names, adatas, layers, seq_keys)):
-			# Create train mask for each dataset separately
-			num_samples = adata.X.shape[0] if layer is None else len(adata.layers[layer].shape[0])
-			train_mask = np.zeros(num_samples, dtype=np.bool)
-			train_size = int(num_samples * (1 - val_split))
-			if val_split != 0:
-				train_mask[:train_size] = 1
+			if masks_exist:
+				train_mask = train_masks[name]
 			else:
-				train_mask[:] = 1
-			np.random.shuffle(train_mask)
+				# Create train mask for each dataset separately
+				num_samples = adata.X.shape[0] if layer is None else len(adata.layers[layer].shape[0])
+				train_mask = np.zeros(num_samples, dtype=np.bool)
+				train_size = int(num_samples * (1 - val_split))
+				if val_split != 0:
+					train_mask[:train_size] = 1
+				else:
+					train_mask[:] = 1
+				np.random.shuffle(train_mask)
+				train_masks[name] = train_mask
 
 			# Save dataset splits
 			scRNA_datas_train.append(adata.X[train_mask] if layer is None else adata.layers[layer][train_mask])
@@ -422,7 +441,7 @@ class JointModel():
 		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, seq_len_train, adatas_train, dataset_names_train, index_train, metadata_train)
 		val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val, index_val, metadata_val)
 
-		return train_dataset, val_dataset
+		return train_dataset, val_dataset, train_masks
 
 	@property
 	def history(self):
@@ -459,13 +478,13 @@ class JointModel():
 		except:
 			pass
 
-	def save_data(self, filepath, train_dataset, val_dataset):
-		data = {'raw_data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
-				'dataset': [train_dataset, val_dataset]}
+	def save_data(self, filepath, train_masks):
+		data = {#'raw_data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
+				'train_masks': train_masks}
 		torch.save(data, filepath)
 
 	def load_data(self, filepath):
 		data_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
-		self.adatas, self.names, self.gene_layers, self.seq_keys = data_file['raw_data']
-		# it returns [train_dataset, val_dataset]
-		return data_file['dataset']
+		# self.adatas, self.names, self.gene_layers, self.seq_keys = data_file['raw_data']
+		# it returns train masks
+		return data_file['train_masks']
