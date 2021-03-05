@@ -4,3 +4,5 @@ saved_models/
 .idea/
 example/.ipynb_checkpoints/
 preprocessing/.ipynb_checkpoints/
+colab/
+comet_ml_key/

@@ -1,0 +1,43 @@
+# These hyperparameters were chosen based on the paper:
+# 1) "scGen predicts single-cell perturbation responses" for VAE, except additional joint hidden layer with fdim 200 and batch size 256 instead of 32
+# 2) BiGRU is based on feeling
+
+seq_model_arch: BiGRU
+seq_model_hyperparams:
+  embedding_dim: 64
+  hidden_size: 256
+  num_layers: 2
+  dropout: 0.1
+  bidirectional: True
+
+scRNA_model_arch: MLP
+scRNA_model_hyperparams:
+  gene_hidden:
+    - 800
+  activation: leakyrelu
+  output_activation: relu
+  dropout: 0.2
+  batch_norm: True
+
+# shared param by all models, "interface" between the models
+hdim: 800
+
+# params of shared encoder and decoder
+activation: leakyrelu
+dropout: 0.2
+batch_norm: True
+shared_hidden:
+  - 200
+zdim: 100
+
+# Loss and optimizer
+lr: 1.0e-3
+batch_size: 256
+losses:
+  - MSE
+  - CE
+
+loss_weights:
+  - 0.1
+  - 1.0
+  - 0.00005
