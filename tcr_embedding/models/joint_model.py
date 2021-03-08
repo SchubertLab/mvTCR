@@ -130,7 +130,7 @@ class JointModel():
 			  lr=3e-4,
 			  losses=['MSE', 'CE'],
 			  loss_weights=[],
-			  val_split=0.1,
+			  val_split='set',
 			  metadata=[],
 			  validate_every=10,
 			  print_every=10,
@@ -405,23 +405,26 @@ class JointModel():
 			if masks_exist:
 				train_mask = train_masks[name]
 			else:
-				# Create train mask for each dataset separately
-				num_samples = adata.X.shape[0] if layer is None else len(adata.layers[layer].shape[0])
-				train_mask = np.zeros(num_samples, dtype=np.bool)
-				train_size = int(num_samples * (1 - val_split))
-				if val_split != 0:
-					train_mask[:train_size] = 1
+				if type(val_split) == str:
+					train_mask = (adata.obs[val_split] == 'train').values
 				else:
-					train_mask[:] = 1
-				np.random.shuffle(train_mask)
+					# Create train mask for each dataset separately
+					num_samples = adata.X.shape[0] if layer is None else len(adata.layers[layer].shape[0])
+					train_mask = np.zeros(num_samples, dtype=np.bool)
+					train_size = int(num_samples * (1 - val_split))
+					if val_split != 0:
+						train_mask[:train_size] = 1
+					else:
+						train_mask[:] = 1
+					np.random.shuffle(train_mask)
 				train_masks[name] = train_mask
 
 			# Save dataset splits
 			scRNA_datas_train.append(adata.X[train_mask] if layer is None else adata.layers[layer][train_mask])
 			scRNA_datas_val.append(adata.X[~train_mask] if layer is None else adata.layers[layer][~train_mask])
 
-			seq_datas_train.append(adata.obs[seq_key][train_mask])
-			seq_datas_val.append(adata.obs[seq_key][~train_mask])
+			seq_datas_train.append(adata.obsm[seq_key][train_mask])
+			seq_datas_val.append(adata.obsm[seq_key][~train_mask])
 
 			seq_len_train += adata.obs['seq_len'][train_mask].to_list()
 			seq_len_val += adata.obs['seq_len'][~train_mask].to_list()

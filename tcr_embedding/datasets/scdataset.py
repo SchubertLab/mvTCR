@@ -33,7 +33,7 @@ class TCRDataset(torch.utils.data.Dataset):
 			self.scRNA_datas.append(self._create_tensor(scRNA_data))
 		self.scRNA_datas = torch.cat(self.scRNA_datas, dim=0)
 
-		self.seq_datas = np.array([item for sublist in seq_datas for item in sublist.to_list()])
+		self.seq_datas = np.concatenate(seq_datas)
 		self.seq_datas = torch.LongTensor(self.seq_datas)
 
 	def _create_tensor(self, x):
