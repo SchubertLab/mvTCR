@@ -3,8 +3,7 @@ from tqdm import tqdm
 from sklearn.model_selection import GroupShuffleSplit
 
 
-def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None,
-				start_end_symbol=True):
+def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
 	"""
 	Encoding of protein or nucleotide sequence inplace, either one-hot-encoded or as index labels and/or one-hot-encoding
 	:param adata: adata file
