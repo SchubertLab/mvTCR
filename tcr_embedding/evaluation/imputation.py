@@ -34,20 +34,15 @@ def filter_data(data_atlas, data_query):
     :param data_query: anndata object containing the full query cell data
     :return: 2 anndata objects containing only the filtered data
     """
-    # todo: filter multi chains
     # todo: filter non overlapping epitopes
 
     def general_filter(data):
         data = data[data.obs['has_ir'] == 'True']
         data = data[data.obs['multi_chain'] == 'False']
         return data
-    print(len(data_atlas))
+
     data_atlas = general_filter(data_atlas)
-    print(len(data_atlas))
-    print('---')
-    print(len(data_query))
     data_query = general_filter(data_query)
-    print(len(data_query))
 
     return data_atlas, data_query
 
@@ -79,19 +74,26 @@ def get_imputation_score(embedding_atlas, embedding_query, label_atlas, label_em
     :return: dictionary {metric_name: metric_score} containing R@1, R@10, R@100, ...
     """
     summary = {}
+
+    # Recall at k
     ks = [1, 10, 100]
     recalls = Metrics.recall_at_k(embedding_atlas, embedding_query, label_atlas, label_embedding, ks)
-
     summary['R@k'] = recalls
+
+    # kNN score
+    knn_score = Metrics.knn_classification(embedding_atlas, embedding_query, label_atlas, label_embedding,
+                                           num_neighbors=5, weights='distance')
+    summary['knn'] = knn_score
     return summary
 
 
 if __name__ == '__main__':
+    """ For testing purposes: """
     test_embedding_func = random_baseline.random_embedding_function(hidden_dim=100)
     print('Reading data')
     test_data = sc.read('../../data/10x_CD8TC/highly_var_5000.h5ad')
     test_data_a = test_data[[random.randint(0, test_data.shape[0]-1) for _ in range(int(test_data.shape[0]*0.6))]]
     test_data_q = test_data[[random.randint(0, test_data.shape[0]-1) for _ in range(int(test_data.shape[0]*0.2))]]
-    print('Start imputation')
+    print('Start evaluation')
     res = run_imputation_evaluation(test_data_a, test_data_q, test_embedding_func)
     print(res)

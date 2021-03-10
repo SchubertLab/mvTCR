@@ -5,21 +5,24 @@ File containing the metrics for evaluating the embedding space
 import numpy as np
 from tqdm import tqdm
 import time
+
 from bottleneck import argpartition
 from collections import defaultdict
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report
 
 
 def recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
     """
-
-    :param data_atlas:
-    :param data_query:
-    :param labels_atlas:
-    :param labels_query:
-    :param ks:
-    :return:
+    Calculates the Recall@k value: % in the k nearest neighbors, is there the correct label
+    :param data_atlas: numpy array (num_cells, hidden_size) embeddings of the atlas data
+    :param data_query: numpy array (num_cells, hidden_size) embeddings of the query data
+    :param labels_atlas: list (num_cells) labels of the atlas data
+    :param labels_query: list (num_cells) labels of the query data
+    :param ks: list or int of k values indicating the num of nearest neighbors
+    :return: dictonary {k: r@k value}
     """
-    if isinstance(ks, str):
+    if isinstance(ks, int):
         ks = [ks]
     count_correct = defaultdict(lambda: 0)
     for i in tqdm(range(data_query.shape[0])):
@@ -34,3 +37,22 @@ def recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
         count_correct[key] = value / data_query.shape[0]
     return dict(count_correct)
 
+
+def knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_neighbors=5, weights='distance'):
+    """
+    Evaluates with kNN based on scikit-learn
+    :param data_atlas: numpy array (num_cells, hidden_size) embeddings of the atlas data
+    :param data_query: numpy array (num_cells, hidden_size) embeddings of the query data
+    :param labels_atlas: list (num_cells) labels of the atlas data
+    :param labels_query: list (num_cells) labels of the query data
+    :param num_neighbors: amount of neighbors used for kNN
+    :param weights: kNN weighting,
+    :return:
+    """
+
+    clf = KNeighborsClassifier(num_neighbors, weights)
+    clf.fit(data_atlas, labels_atlas)
+
+    labels_predicted = clf.predict(data_query)
+    report = classification_report(labels_query, labels_predicted)
+    return report
