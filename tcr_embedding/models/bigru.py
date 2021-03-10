@@ -109,7 +109,7 @@ class BiGRUDecoder(nn.Module):
 		"""
 		Forward pass including autoregressively predicting the sequence using a for loop
 		:param shared_hidden_state: shared hidden state after shared_decoder, torch.FloatTensor with shape [batch_size, input_dim]
-		:param gt_tcr_seq: torch.LongTensor, shape=[batch_size, max_seq_len] ground truth tcr-seq, same as encoder input
+		:param gt_tcr_seq: torch.LongTensor, shape=[batch_size, max_seq_len] ground truth tcr-seq, same as encoder input, only needed for shape and start symbol
 		:return:
 		"""
 		decoder_raw_output = []

@@ -1,4 +1,6 @@
 import numpy as np
+from tqdm import tqdm
+from sklearn.model_selection import GroupShuffleSplit
 
 
 def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
@@ -53,10 +55,57 @@ def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, 
 			for x, token_id in zip(x_seq, token_id_seq):
 				x[token_id] = 1.0
 		adata.obs[ohe_col] = one_hot
+		adata.obsm[ohe_col] = np.stack(one_hot)
 
 	# If specified write label as index sequence
 	if label_col is not None:
 		token_ids = [np.array(token_id) for token_id in token_ids]
 		adata.obs[label_col] = token_ids
+		adata.obsm[label_col] = np.stack(token_ids)
 
-	return aa_to_id
+	adata.uns['aa_to_id'] = aa_to_id
+
+
+def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, random_seed=42):
+	"""
+	https://stackoverflow.com/a/63706321
+	Split the dataset into train and test. To create a val set, execute this code twice to first split test+val and test
+	and then split the test and val.
+
+	The splitting tries to improve splitting by two properties:
+	1) Stratified splitting, so the label distribution is roughly the same in both sets, e.g. antigen specificity
+	2) Certain groups are only in one set, e.g. the same clonotypes are only in one set, so the model cannot peak into similar sample during training.
+
+	If there is only one group to a label, the group is defined as training, else as test sample, the model never saw this label before.
+
+	The outcome is not always ideal, i.e. the label distribution may not , as the labels within a group is heterogeneous (e.g. 2 cells from the same clonotype have different antigen labels)
+	Also see here for the challenges: https://github.com/scikit-learn/scikit-learn/issues/12076
+
+	:param df: pd.DataFrame containing the data to split
+	:param stratify_col: str key for the column containing the classes to be stratified over all sets
+	:param group_col: str key for the column containing the groups to be kept in the same set
+	"""
+	groups = df.groupby(stratify_col)
+	all_train = []
+	all_test = []
+	for group_id, group in tqdm(groups):
+		# if a group is already taken in test or train it must stay there
+		group = group[~group[group_col].isin(all_train + all_test)]
+		# if group is empty
+		if group.shape[0] == 0:
+			continue
+
+		if len(group) > 1:
+			train_inds, test_inds = next(
+				GroupShuffleSplit(test_size=val_split, n_splits=1, random_state=random_seed).split(group, groups=group[
+					group_col]))
+			all_train += group.iloc[train_inds][group_col].tolist()
+			all_test += group.iloc[test_inds][group_col].tolist()
+		# if there is only one clonotype for this particular label
+		else:
+			all_train += group[group_col].tolist()
+
+	train = df[df[group_col].isin(all_train)]
+	test = df[df[group_col].isin(all_test)]
+
+	return train, test

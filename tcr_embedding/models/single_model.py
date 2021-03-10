@@ -19,24 +19,38 @@ from .losses.kld import KLD
 from .mlp_scRNA import build_mlp_encoder, build_mlp_decoder
 
 
-class JointModelTorch(nn.Module):
+def none_model(hyperparams, hdim, xdim):
+	pass
+
+
+class SingleModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
-		super(JointModelTorch, self).__init__()
+		super(SingleModelTorch, self).__init__()
+
+		assert scRNA_model_arch != 'None' or seq_model_arch != 'None', 'At least scRNA- or seq-model needs to be not None'
+		assert not(scRNA_model_arch == 'None' and seq_model_arch == 'None'), 'Please use the joint model'
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
 					  'Transformer': [TransformerEncoder, TransformerDecoder],
-					  'BiGRU': [BiGRUEncoder, BiGRUDecoder]}
+					  'BiGRU': [BiGRUEncoder, BiGRUDecoder],
+					  'None': [none_model, none_model]}
 
-		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder]}
+		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder],
+						'None': [none_model, none_model]}
+
+		num_modalities = int(scRNA_model_arch != 'None') + int(seq_model_arch != 'None')
+
+		self.scRNA_model_arch = scRNA_model_arch
+		self.seq_model_arch = seq_model_arch
 
 		self.seq_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim, num_seq_labels)
-		self.seq_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*2, num_seq_labels)
+		self.seq_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*num_modalities, num_seq_labels)
 
 		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
-		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim*2)
+		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim*num_modalities)
 
-		self.shared_encoder = MLP(hdim*2, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.shared_decoder = MLP(zdim, hdim*2, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		self.shared_encoder = MLP(hdim*num_modalities, zdim*2, shared_hidden, activation, activation, dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.shared_decoder = MLP(zdim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 
 	def forward(self, scRNA, tcr_seq, tcr_len):
 		"""
@@ -45,17 +59,28 @@ class JointModelTorch(nn.Module):
 		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
 		:return: scRNA_pred, tcr_seq_pred
 		"""
-		h_scRNA = self.gene_encoder(scRNA)  # shape=[batch_size, hdim]
-		h_tcr_seq = self.seq_encoder(tcr_seq, tcr_len)  # shape=[batch_size, hdim]
 
-		joint_feature = torch.cat([h_scRNA, h_tcr_seq], dim=-1)
+		if self.scRNA_model_arch != 'None' and self.seq_model_arch == 'None':
+			h_scRNA = self.gene_encoder(scRNA)  # shape=[batch_size, hdim]
+			joint_feature = h_scRNA
+		elif self.seq_model_arch != 'None' and self.scRNA_model_arch == 'None':
+			h_tcr_seq = self.seq_encoder(tcr_seq, tcr_len)  # shape=[batch_size, hdim]
+			joint_feature = h_tcr_seq
+		else:
+			raise AssertionError('Please use Joint Model')
+
 		z_ = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
 		mu, logvar = z_[:, :z_.shape[1]//2], z_[:, z_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z = self.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
 
-		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim*2]
-		scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
-		tcr_seq_pred = self.seq_decoder(joint_dec_feature, tcr_seq)
+		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim]
+
+		if self.scRNA_model_arch != 'None' and self.seq_model_arch == 'None':
+			scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
+			tcr_seq_pred = 0
+		elif self.seq_model_arch != 'None' and self.scRNA_model_arch == 'None':
+			tcr_seq_pred = self.seq_decoder(joint_dec_feature, tcr_seq)
+			scRNA_pred = 0
 
 		return z, mu, logvar, scRNA_pred, tcr_seq_pred
 
@@ -71,7 +96,7 @@ class JointModelTorch(nn.Module):
 		return z
 
 
-class JointModel:
+class SingleModel:
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
 				 names,
@@ -119,8 +144,8 @@ class JointModel:
 		# assuming now gene expressions between datasets are using the same genes, so input vectors have same length and order, e.g. using inner or outer join
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
-		self.model = JointModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-									 seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+		self.model = SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
+									  seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
 	def train(self,
 			  experiment_name='example',
@@ -216,12 +241,17 @@ class JointModel:
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-				scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
+				if self.model.scRNA_model_arch != 'None' and self.model.seq_model_arch == 'None':
+					scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+					loss = scRNA_loss + KLD_loss
+					TCR_loss = torch.FloatTensor([0])
 				# Before feeding in the gt_seq, the start token needs to get removed.
 				# Further batch and seq dimension needs to be flatten
-				TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
-				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
-				loss = scRNA_loss + TCR_loss + KLD_loss
+				if self.model.seq_model_arch != 'None' and self.model.scRNA_model_arch == 'None':
+					TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+					loss = TCR_loss + KLD_loss
+					scRNA_loss = torch.FloatTensor([0])
 
 				self.optimizer.zero_grad()
 				loss.backward()
@@ -274,10 +304,15 @@ class JointModel:
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-						scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
-						TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
 						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
-						loss = scRNA_loss + TCR_loss + KLD_loss
+						if self.model.scRNA_model_arch != 'None' and self.model.seq_model_arch == 'None':
+							scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+							loss = scRNA_loss + KLD_loss
+							TCR_loss = torch.FloatTensor([0])
+						if self.model.seq_model_arch != 'None' and self.model.scRNA_model_arch == 'None':
+							TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+							loss = TCR_loss + KLD_loss
+							scRNA_loss = torch.FloatTensor([0])
 
 						loss_val_total.append(loss)
 						scRNA_loss_val_total.append(scRNA_loss)
