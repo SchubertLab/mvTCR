@@ -15,6 +15,7 @@ def get_model_prediction_function(model, batch_size=32):
         :return: numpy array (num_cells, hidden_dim) latent embedding for each cell
         """
         latent_space = model.get_latent(data, 'emb', batch_size=batch_size)
+        latent_space = latent_space.X
         return latent_space
     return prediction_function
 
