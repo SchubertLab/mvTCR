@@ -1,0 +1,6 @@
+scanpy==1.7.0
+scirpy==0.6.1
+comet-ml
+
+# nb_conda_kernels
+torch==1.7.1 -f https://download.pytorch.org/whl/cu102/torch_stable.html
