@@ -54,5 +54,5 @@ def knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_n
     clf.fit(data_atlas, labels_atlas)
 
     labels_predicted = clf.predict(data_query)
-    report = classification_report(labels_query, labels_predicted)
+    report = classification_report(labels_query, labels_predicted, output_dict=True)
     return report
