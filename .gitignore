@@ -6,3 +6,6 @@ example/.ipynb_checkpoints/
 preprocessing/.ipynb_checkpoints/
 colab/
 comet_ml_key/
+ray_results/
+*pycache*
+*pyc
