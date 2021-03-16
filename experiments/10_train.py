@@ -5,6 +5,7 @@ import tcr_embedding.evaluation.WrapperFunctions as Wrapper
 import tcr_embedding.evaluation.imputation as Imputation
 
 PATH_BASE = '../'
+PATH_SAVE = '../saved_models/'
 
 
 def load_data():
@@ -46,7 +47,7 @@ def train_model(model):
     model.train(
         experiment_name='test',
         n_iters=None,
-        n_epochs=0,
+        n_epochs=1000,
         batch_size=params['batch_size'],
         lr=params['lr'],
         losses=params['losses'],  # list of losses for each modality: losses[0] := scRNA, losses[1] := TCR
@@ -57,13 +58,16 @@ def train_model(model):
         print_every=1,
         save_every=25,
         num_workers=0,
+        early_stop=20,
         verbose=2,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
+        save_path=PATH_SAVE,
         device=None,
         comet=None
     )
 
 
 def evaluate_model(model, data):
+    model.load(PATH_SAVE + '/test_best_model.pt')
     embedding_function = Wrapper.get_model_prediction_function(model, batch_size=512)
     eval_score = Imputation.run_imputation_evaluation(data, embedding_function, query_source='val')
     return eval_score
