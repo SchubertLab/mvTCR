@@ -31,13 +31,15 @@ class TransformerEncoder(nn.Module):
         """
         super(TransformerEncoder, self).__init__()
         self.params = params
-        self.num_seq_labels = num_seq_labels
-        num_tokens = 21  # todo check for start and stop
 
-        self.embedding = nn.Embedding(num_tokens, params['embedding_size'], padding_idx=num_seq_labels)
+        self.num_seq_labels = num_seq_labels
+        num_tokens = 24  # todo check for start and stop
+        max_length = 47
+
+        self.embedding = nn.Embedding(num_seq_labels, params['embedding_size'], padding_idx=0)
         self.positional_encoding = TrigonometricPositionalEncoding(params['embedding_size'],
                                                                    params['dropout'],
-                                                                   num_seq_labels)
+                                                                   max_length)
 
         encoding_layers = nn.TransformerEncoderLayer(params['embedding_size'],
                                                      params['num_heads'],
@@ -45,16 +47,17 @@ class TransformerEncoder(nn.Module):
                                                      params['dropout'])
         self.transformer_encoder = nn.TransformerEncoder(encoding_layers, params['encoding_layers'])
 
-        self.fc_reduction = nn.Linear(num_seq_labels * params['embedding_size'], hdim)
+        self.fc_reduction = nn.Linear(max_length * params['embedding_size'], hdim)
 
-    def forward(self, x):
-        x = x.transpose(0, 1)
+    def forward(self, x, tcr_len):
         x = self.embedding(x) * math.sqrt(self.num_seq_labels)
+        x = x.transpose(0, 1)
         x = x + self.positional_encoding(x)
         x = self.transformer_encoder(x)
         # todo add source mask, maybe ==> dont think its a good idea, since dim change for hidden layer
+        # todo: embedding shared over encoder decoder?
         x = x.transpose(0, 1)
-        x = torch.flatten(x, start_dim=1)
+        x = x.flatten(1)
         x = self.fc_reduction(x)
         return x
 
@@ -72,14 +75,16 @@ class TransformerDecoder(nn.Module):
         self.hdim = hdim
         self.num_seq_labels = num_seq_labels
 
-        self.device = params['device']
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.max_length = 47   # todo
 
-        self.fc_upsample = nn.Linear(hdim, num_seq_labels * params['embedding_size'])
+        self.fc_upsample = nn.Linear(hdim, self.max_length * params['embedding_size'])
         # the embedding size remains constant over all layers
-        self.embedding = nn.Embedding(params['num_tokens'], params['embedding_size'], padding_idx=num_seq_labels)
+
+        self.embedding = nn.Embedding(num_seq_labels, params['embedding_size'], padding_idx=0)
         self.positional_encoding = TrigonometricPositionalEncoding(params['embedding_size'],
                                                                    params['dropout'],
-                                                                   num_seq_labels)
+                                                                   self.max_length)
 
         decoding_layers = nn.TransformerDecoderLayer(params['embedding_size'],
                                                      params['num_heads'],
@@ -87,25 +92,31 @@ class TransformerDecoder(nn.Module):
                                                      params['dropout'])
         self.transformer_decoder = nn.TransformerDecoder(decoding_layers, params['decoding_layers'])
 
-        self.fc_out = nn.Linear(params['embedding_size'], params['num_tokens'])
+        self.fc_out = nn.Linear(params['embedding_size'], num_seq_labels)
 
     def forward(self, hidden_state, target_sequence):
+        """
+        Forward pass of the Decoder module
+        :param hidden_state: joint hidden state of the VAE
+        :param target_sequence: Ground truth output
+        :return:
+        """
         hidden_state = self.fc_upsample(hidden_state)
-        shape = (hidden_state.shape[0], self.num_seq_labels, self.params['embedding_size'])
+        shape = (hidden_state.shape[0], self.max_length, self.params['embedding_size'])
         hidden_state = torch.reshape(hidden_state, shape)
 
         hidden_state = hidden_state.transpose(0, 1)
+
+        target_sequence = target_sequence[:, :-1]
         target_sequence = target_sequence.transpose(0, 1)
 
         target_sequence = self.embedding(target_sequence) * math.sqrt(self.num_seq_labels)
         target_sequence = target_sequence + self.positional_encoding(target_sequence)
-        # print(target_sequence.shape)
-        # target_mask = nn.Transformer.generate_square_subsequent_mask(None, target_sequence.shape[1]).to(self.device)
-        # print(target_mask.shape)
-        print(hidden_state.shape)
-        print(target_sequence.shape)
-        x = self.transformer_decoder(target_sequence, hidden_state)  #, tgt_mask=target_mask)
+
+        target_mask = nn.Transformer.generate_square_subsequent_mask(None, target_sequence.shape[0]).to(self.device)
+        x = self.transformer_decoder(target_sequence, hidden_state, tgt_mask=target_mask)
         x = self.fc_out(x)
+        x = x.transpose(0, 1)
         return x
 
 
@@ -126,6 +137,6 @@ if __name__ == '__main__':
     }
     encoder = TransformerEncoder(params=params_test, hdim=256, num_seq_labels=9).to(device)
     decoder = TransformerDecoder(params=params_test, hdim=256, num_seq_labels=9).to(device)
-    hidden = encoder(x_in)
+    hidden = encoder(x_in, 0)
     out = decoder(hidden, x_in)
-    # print(out.shape)
+    print(out.shape)
