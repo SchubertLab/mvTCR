@@ -33,13 +33,11 @@ class TransformerEncoder(nn.Module):
         self.params = params
 
         self.num_seq_labels = num_seq_labels
-        num_tokens = 24  # todo check for start and stop
-        max_length = 47
 
         self.embedding = nn.Embedding(num_seq_labels, params['embedding_size'], padding_idx=0)
         self.positional_encoding = TrigonometricPositionalEncoding(params['embedding_size'],
                                                                    params['dropout'],
-                                                                   max_length)
+                                                                   params['max_tcr_length'])
 
         encoding_layers = nn.TransformerEncoderLayer(params['embedding_size'],
                                                      params['num_heads'],
@@ -47,7 +45,7 @@ class TransformerEncoder(nn.Module):
                                                      params['dropout'])
         self.transformer_encoder = nn.TransformerEncoder(encoding_layers, params['encoding_layers'])
 
-        self.fc_reduction = nn.Linear(max_length * params['embedding_size'], hdim)
+        self.fc_reduction = nn.Linear(params['max_tcr_length'] * params['embedding_size'], hdim)
 
     def forward(self, x, tcr_len):
         x = self.embedding(x) * math.sqrt(self.num_seq_labels)
@@ -76,15 +74,14 @@ class TransformerDecoder(nn.Module):
         self.num_seq_labels = num_seq_labels
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.max_length = 47   # todo
 
-        self.fc_upsample = nn.Linear(hdim, self.max_length * params['embedding_size'])
+        self.fc_upsample = nn.Linear(hdim, self.params['max_tcr_length'] * params['embedding_size'])
         # the embedding size remains constant over all layers
 
         self.embedding = nn.Embedding(num_seq_labels, params['embedding_size'], padding_idx=0)
         self.positional_encoding = TrigonometricPositionalEncoding(params['embedding_size'],
                                                                    params['dropout'],
-                                                                   self.max_length)
+                                                                   self.params['max_tcr_length'])
 
         decoding_layers = nn.TransformerDecoderLayer(params['embedding_size'],
                                                      params['num_heads'],
@@ -102,7 +99,7 @@ class TransformerDecoder(nn.Module):
         :return:
         """
         hidden_state = self.fc_upsample(hidden_state)
-        shape = (hidden_state.shape[0], self.max_length, self.params['embedding_size'])
+        shape = (hidden_state.shape[0], self.params['max_tcr_length'], self.params['embedding_size'])
         hidden_state = torch.reshape(hidden_state, shape)
 
         hidden_state = hidden_state.transpose(0, 1)

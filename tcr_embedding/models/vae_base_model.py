@@ -55,17 +55,21 @@ class VAEBaseModel:
 		assert len(adatas) == len(seq_keys) or len(seq_keys) == 0
 		assert len(adatas) == len(gene_layers) or len(gene_layers) == 0
 
+		self.adatas = adatas
+		self.names = names
+
 		self._train_history = defaultdict(list)
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
+
+		if 'max_tcr_length' not in seq_model_hyperparams:
+			seq_model_hyperparams['max_tcr_length'] = self.get_max_tcr_length()
+
 		self.params = {'seq_model_arch': seq_model_arch, 'seq_model_hyperparams': seq_model_hyperparams,
 					   'scRNA_model_arch': scRNA_model_arch, 'scRNA_model_hyperparams': scRNA_model_hyperparams,
 					   'zdim': zdim, 'hdim': hdim, 'activation': activation, 'dropout': dropout, 'batch_norm': batch_norm,
 					   'shared_hidden': shared_hidden}
 		self.aa_to_id = aa_to_id
-
-		self.adatas = adatas
-		self.names = names
 
 		if len(seq_keys) == 0:
 			self.seq_keys = ['tcr_seq'] * len(adatas)
@@ -543,6 +547,18 @@ class VAEBaseModel:
 		# self.adatas, self.names, self.gene_layers, self.seq_keys = data_file['raw_data']
 		# it returns train masks
 		return data_file['train_masks']
+
+	def get_max_tcr_length(self):
+		"""
+		Determine the maximum amount of letters in the TCR sequence (TRA+TRB+codons)
+		:return: int value maximal sequence length
+		"""
+		max_length = -99
+		for adata in self.adatas:
+			tcr_data = adata.obs['TRA+TRB']
+			current_max = tcr_data.str.len().max()
+			max_length = max(current_max, max_length)
+		return max_length
 
 	def build_model(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
