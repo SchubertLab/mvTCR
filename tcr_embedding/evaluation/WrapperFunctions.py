@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def get_model_prediction_function(model, batch_size=32):
+def get_model_prediction_function(model, batch_size=512):
     """
     Wrapper function for our embedding models
     :param model: trained pytorch model
@@ -14,7 +14,7 @@ def get_model_prediction_function(model, batch_size=32):
         :param data: anndata object containing the cell data
         :return: numpy array (num_cells, hidden_dim) latent embedding for each cell
         """
-        latent_space = model.get_latent(data, 'emb', batch_size=batch_size)
+        latent_space = model.get_latent([data], 'emb', batch_size=batch_size)
         latent_space = latent_space.X
         return latent_space
     return prediction_function
@@ -33,6 +33,7 @@ def get_random_prediction_function(hidden_dim):
         :return: numpy array (num_cells, hidden_dim) representing the latent space
         """
         n = len(data.obs)
+        np.random.seed(29031995)
         latent_embedding = np.zeros(shape=(n, hidden_dim))
         for i in range(n):
             latent_embedding[i, :] = np.random.random(hidden_dim)

@@ -1,7 +1,8 @@
 import scanpy as sc
 import yaml
 import tcr_embedding as tcr
-
+import tcr_embedding.evaluation.WrapperFunctions as Wrapper
+import tcr_embedding.evaluation.imputation as Imputation
 
 PATH_BASE = '../'
 
@@ -45,7 +46,7 @@ def train_model(model):
     model.train(
         experiment_name='test',
         n_iters=None,
-        n_epochs=500,
+        n_epochs=0,
         batch_size=params['batch_size'],
         lr=params['lr'],
         losses=params['losses'],  # list of losses for each modality: losses[0] := scRNA, losses[1] := TCR
@@ -62,7 +63,15 @@ def train_model(model):
     )
 
 
+def evaluate_model(model, data):
+    embedding_function = Wrapper.get_model_prediction_function(model, batch_size=512)
+    eval_score = Imputation.run_imputation_evaluation(data, embedding_function, query_source='val')
+    return eval_score
+
+
 data_tc = load_data()
 params = load_config('transformer')
 model_test = create_model(data_tc)
 train_model(model_test)
+score = evaluate_model(model_test, data_tc)
+print(score)
