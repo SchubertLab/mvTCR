@@ -14,6 +14,7 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
     :param embedding_function: function calculating the latent space for a single input
     :param query_source: str 'val' or 'test' to choose between evaluation mode
     :param use_non_binder: bool filter out non binding TCRs
+    :param use_reduced_binders: if true antigen with low amount of tcrs are regarded as non binders
     :return: dictionary {metric: summary} containing the evaluation scores
     """
     data_atlas = data_full[data_full.obs['set'] == 'train']
@@ -38,6 +39,7 @@ def filter_data(data_atlas, data_query, use_non_binder=True, use_reduced_binders
     :param data_atlas: annData object containing the full atlas cell data
     :param data_query: anndata object containing the full query cell data
     :param use_non_binder: if true tcrs without specificity are filtered out
+    :param use_reduced_binders: if true antigen with low amount of tcrs are regarded as non binders
     :return: 2 anndata objects containing only the filtered data
     """
     def general_filter(data):
