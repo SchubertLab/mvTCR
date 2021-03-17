@@ -5,6 +5,14 @@ import torch.nn as nn
 
 # from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
 class TrigonometricPositionalEncoding(nn.Module):
+    """
+        This trigonometric positional embedding was taken from:
+        Title: Sequence-to-Sequence Modeling with nn.Transformer and TorchText
+        Authors: todo
+        Date: 17th March 2021
+        Code version: ???
+        Availability: https://pytorch.org/tutorials/beginner/transformer_tutorial.html
+    """
     def __init__(self, embedding_dim, dropout, max_len):
         super(TrigonometricPositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
