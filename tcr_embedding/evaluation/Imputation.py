@@ -30,7 +30,7 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
     embedding_query = embedding_function(data_query)
 
     scores = get_imputation_scores(embedding_atlas, embedding_query,
-                                   data_atlas.obs['binding_label'], data_query.obs['binding_label'],
+                                   data_atlas.obs['binding_name'], data_query.obs['binding_name'],
                                    num_neighbors=num_neighbors)
     return scores
 
