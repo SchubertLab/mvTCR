@@ -97,6 +97,7 @@ class VAEBaseModel:
 			  lr=3e-4,
 			  losses=['MSE', 'CE'],
 			  loss_weights=[],
+			  kl_annealing_epochs=None,
 			  val_split='set',
 			  metadata=[],
 			  early_stop=None,
@@ -119,6 +120,7 @@ class VAEBaseModel:
 		:param lr: float, learning rate
 		:param losses: list of str, losses[0] := Loss for scRNA reconstruction, losses[1] := Loss for TCR reconstruction
 		:param loss_weights: list of floats, loss_weights[0]:=weight or scRNA loss, loss_weights[1]:=weight for TCR loss, loss_weights[2] := KLD Loss
+		:param kl_annealing_epochs: int or None, int number of epochs until kl reaches maximum warmup, if None this value is set to 30% of n_epochs
 		:param val_split: str or float, if str it indicates the adata.obs[val_split] containing 'train' and 'val', if float, adata is split randomly by val_split
 		:param metadata: list of str, list of metadata that is needed, not really useful at the moment #TODO maybe delete this
 		:param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
@@ -160,6 +162,12 @@ class VAEBaseModel:
 		# Initialize Loss and Optimizer
 		assert len(losses) == 2, 'losses needs to contain two elements corresponding to scRNA and TCR-seq loss'
 
+		if n_iters is not None:
+			n_epochs = n_iters // len(train_dataloader)
+
+		if kl_annealing_epochs is None:
+			kl_annealing_epochs = int(0.3 * n_epochs)
+
 		if len(loss_weights) == 0:
 			loss_weights = [1.0] * 3
 		elif len(loss_weights) == 3:
@@ -190,9 +198,6 @@ class VAEBaseModel:
 		no_improvements = 0
 		self.epoch = 0
 
-		if n_iters is not None:
-			n_epochs = n_iters // len(train_dataloader)
-
 		if continue_training:
 			# Load model and optimizer state_dict, as well as epoch and history
 			self.load(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
@@ -212,7 +217,9 @@ class VAEBaseModel:
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-				loss, scRNA_loss, TCR_loss, KLD_loss = self.calculate_loss(mu, logvar, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, KL_criterion)
+				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion)
+				loss = loss + KLD_loss
 
 				self.optimizer.zero_grad()
 				loss.backward()
@@ -265,8 +272,9 @@ class VAEBaseModel:
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-
-						loss, scRNA_loss, TCR_loss, KLD_loss = self.calculate_loss(mu, logvar, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, KL_criterion)
+						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion)
+						loss = loss + KLD_loss
 
 						loss_val_total.append(loss)
 						scRNA_loss_val_total.append(scRNA_loss)
@@ -351,7 +359,7 @@ class VAEBaseModel:
 		with torch.no_grad():
 			self.model = self.model.to(device)
 			self.model.eval()
-			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in tqdm(pred_dataloader, 'Batch: '):
+			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in pred_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
 
@@ -570,5 +578,14 @@ class VAEBaseModel:
 					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
 		raise NotImplementedError()
 
-	def calculate_loss(self, mu, logvar, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, KL_criterion):
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
 		raise NotImplementedError
+
+	def kl_annealing(self, e, kl_annealing_epochs):
+		"""
+		Calculate KLD annealing factor, i.e. KLD needs to get warmup
+		:param e: current epoch
+		:param kl_annealing_epochs: total number of warmup epochs
+		:return:
+		"""
+		return min(1.0, e / kl_annealing_epochs)

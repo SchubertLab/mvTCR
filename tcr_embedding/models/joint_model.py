@@ -87,10 +87,9 @@ class JointModel(VAEBaseModel):
 		return JointModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 							   seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
-	def calculate_loss(self, mu, logvar, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, KL_criterion):
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
 		scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
 		TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
-		KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
-		loss = scRNA_loss + TCR_loss + KLD_loss
+		loss = scRNA_loss + TCR_loss
 
-		return loss, scRNA_loss, TCR_loss, KLD_loss
+		return loss, scRNA_loss, TCR_loss

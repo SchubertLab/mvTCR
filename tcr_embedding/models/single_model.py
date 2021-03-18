@@ -113,16 +113,15 @@ class SingleModel(VAEBaseModel):
 		return SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 								seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
-	def calculate_loss(self, mu, logvar, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, KL_criterion):
-		KLD_loss = loss_weights[2] * KL_criterion(mu, logvar)
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
 		if self.model.scRNA_model_arch != 'None' and self.model.seq_model_arch == 'None':
 			scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
-			loss = scRNA_loss + KLD_loss
+			loss = scRNA_loss
 			TCR_loss = torch.FloatTensor([0])
 		# Before feeding in the gt_seq, the start token needs to get removed.
 		# Further batch and seq dimension needs to be flatten
 		if self.model.seq_model_arch != 'None' and self.model.scRNA_model_arch == 'None':
 			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
-			loss = TCR_loss + KLD_loss
+			loss = TCR_loss
 			scRNA_loss = torch.FloatTensor([0])
-		return loss, scRNA_loss, TCR_loss, KLD_loss
+		return loss, scRNA_loss, TCR_loss
