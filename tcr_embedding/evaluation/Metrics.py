@@ -1,18 +1,16 @@
 """
 File containing the metrics for evaluating the embedding space
 """
-
 import numpy as np
 from tqdm import tqdm
-import time
 
 from bottleneck import argpartition
 from collections import defaultdict
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, silhouette_score, adjusted_mutual_info_score
 
 
-def recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
+def get_recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
     """
     Calculates the Recall@k value: % in the k nearest neighbors, is there the correct label
     :param data_atlas: numpy array (num_cells, hidden_size) embeddings of the atlas data
@@ -38,7 +36,7 @@ def recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
     return dict(count_correct)
 
 
-def knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_neighbors=5, weights='distance'):
+def get_knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_neighbors=5, weights='distance'):
     """
     Evaluates with kNN based on scikit-learn
     :param data_atlas: numpy array (num_cells, hidden_size) embeddings of the atlas data
@@ -56,3 +54,25 @@ def knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_n
     labels_predicted = clf.predict(data_query)
     report = classification_report(labels_query, labels_predicted, output_dict=True)
     return report
+
+
+def get_silhouette_scores(embeddings, labels_predicted):
+    """
+    Calculates the Silhouette score as internal cluster evaluation
+    :param embeddings: numpy array (n_samples, dim_hidden) containing the latent embedding
+    :param labels_predicted: predicted labels based on clustering in latent space
+    :return:
+    """
+    score = silhouette_score(embeddings, labels_predicted, metric='euclidean', random_state=29031995)
+    return score
+
+
+def get_adjusted_mutual_information(labels_true, labels_predicted):
+    """
+    Calculates the AMI score as external cluster evaluation
+    :param labels_true: ground truth labels for external cluster evaluation
+    :param labels_predicted: predicted labels based on clustering in latent space
+    :return: Adjusted mutual information score
+    """
+    scores = adjusted_mutual_info_score(labels_true, labels_predicted, average_method='arithmetic')
+    return scores

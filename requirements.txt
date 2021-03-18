@@ -1,8 +1,12 @@
 scanpy~=1.7.1
 scirpy==0.6.1
 comet-ml
-bottleneck
+bottleneck~=1.3.2
+numpy
+scikit-learn
+tqdm
+leidenalg
+anndata
 
 # nb_conda_kernels
 torch==1.7.1 -f https://download.pytorch.org/whl/cu102/torch_stable.html
-
