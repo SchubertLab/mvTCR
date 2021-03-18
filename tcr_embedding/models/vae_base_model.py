@@ -318,7 +318,7 @@ class VAEBaseModel:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
 			if save_every is not None and e % save_every == 0:
-				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(3)}.pt'))
+				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
 
 			if early_stop is not None and no_improvements > early_stop:
 				break
