@@ -17,7 +17,6 @@ from .losses.kld import KLD
 class VAEBaseModel:
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
-				 names,
 				 aa_to_id,
 				 seq_model_arch,  # seq model architecture
 				 seq_model_hyperparams,  # dict of seq model hyperparameters
@@ -29,6 +28,7 @@ class VAEBaseModel:
 				 dropout,
 				 batch_norm,
 				 shared_hidden=[],
+				 names=[],
 				 gene_layers=[],
 				 seq_keys=[]
 				 ):
@@ -56,6 +56,8 @@ class VAEBaseModel:
 		assert len(adatas) == len(gene_layers) or len(gene_layers) == 0
 
 		self.adatas = adatas
+		if len(names) == 0:
+			names = [f'dataset_{i}' for i in range(len(adatas))]
 		self.names = names
 
 		self._train_history = defaultdict(list)
@@ -194,9 +196,10 @@ class VAEBaseModel:
 		if continue_training:
 			# Load model and optimizer state_dict, as well as epoch and history
 			self.load(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
+			self.epoch += 1
 			print(f'Continue training from epoch {self.epoch}')
 
-		for e in tqdm(range(self.epoch, n_epochs), 'Epoch: '):
+		for e in tqdm(range(self.epoch, n_epochs+1), 'Epoch: '):
 			self.epoch = e
 			# TRAIN LOOP
 			loss_train_total = []
@@ -312,12 +315,12 @@ class VAEBaseModel:
 			if early_stop is not None and no_improvements > early_stop:
 				break
 
-	def get_latent(self, adatas, names, batch_size, num_workers=0, gene_layers=[], seq_keys=[], metadata=[], device=None):
+	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[], device=None):
 		"""
 		Get latent
 		:param adatas: list of adatas
-		:param names: list of str names for each adata, same order as adatas
 		:param batch_size: int, batch size
+		:param names: list of str names for each adata, same order as adatas
 		:param num_workers: int, num_workers for dataloader
 		:param gene_layers: list of str or [], keys for scRNA data, i.e. adata.layer[gene_layers[i]] for each dataset i, or empty to use adata.X
 		:param seq_keys: list of str or [], keys for TCR data, i.e. adata.obsm[seq_keys[i]] for each dataset i, or empty to use adata.obsm['tcr_seq']
@@ -327,6 +330,9 @@ class VAEBaseModel:
 		"""
 		if device is None:
 			device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+		if len(names) == 0:
+			names = [f'dataset_{i}' for i in range(len(adatas))]
 
 		if len(seq_keys) == 0:
 			seq_keys = ['tcr_seq'] * len(adatas)
@@ -396,9 +402,9 @@ class VAEBaseModel:
 			metadata.append(class_label)
 		z_train = self.get_latent(
 			adatas=[train_adata],
-			names=['10x'],
 			batch_size=256,
 			num_workers=0,
+			names=['10x'],
 			gene_layers=[],
 			seq_keys=[],
 			metadata=['binding_name', 'binding_label']
@@ -406,9 +412,9 @@ class VAEBaseModel:
 
 		z_val = self.get_latent(
 			adatas=[val_adata],
-			names=['10x'],
 			batch_size=256,
 			num_workers=0,
+			names=['10x'],
 			gene_layers=[],
 			seq_keys=[],
 			metadata=['binding_name', 'binding_label']
@@ -510,7 +516,7 @@ class VAEBaseModel:
 		model_file = {'state_dict': self.model.state_dict(),
 					  'train_history': self._train_history,
 					  'val_history': self._val_history,
-					  'epoch': self.epoch + 1,
+					  'epoch': self.epoch,
 					  'aa_to_id': self.aa_to_id,
 					  'params': self.params,
 					  'best_loss': self.best_loss,

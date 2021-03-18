@@ -89,7 +89,6 @@ class SingleModelTorch(nn.Module):
 class SingleModel(VAEBaseModel):
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
-				 names,
 				 aa_to_id,
 				 seq_model_arch,  # seq model architecture
 				 seq_model_hyperparams,  # dict of seq model hyperparameters
@@ -101,12 +100,13 @@ class SingleModel(VAEBaseModel):
 				 dropout,
 				 batch_norm,
 				 shared_hidden=[],
+				 names=[],
 				 gene_layers=[],
 				 seq_keys=[]
 				 ):
 
-		super(SingleModel, self).__init__(adatas, names, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,
-				 scRNA_model_hyperparams, zdim, hdim, activation, dropout, batch_norm, shared_hidden, gene_layers, seq_keys)
+		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
+										  zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys)
 
 	def build_model(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
