@@ -1,17 +1,23 @@
 # python -W ignore 10x_ray_tune.py --model bigru --name test
 from comet_ml import Experiment
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import scanpy as sc
 import os
 import pickle
 from datetime import datetime
 import argparse
 from tqdm import tqdm
+import time
+import importlib
+import sys
+sys.path.append('../config_tune')
 
 import ray
 from ray import tune
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.optuna import OptunaSearch
-from config_tune import params, init_params
+# from config_tune import params, init_params
 
 
 def trial_dirname_creator(trial):
@@ -25,6 +31,11 @@ def objective(params, checkpoint_dir=None, adata=None):
 	:param checkpoint_dir: Ray Tune will use this automatically
 	:param adata: adata containing train and eval
 	"""
+	import warnings
+	warnings.simplefilter(action='ignore', category=FutureWarning)
+	import pandas as pd
+	pd.options.mode.chained_assignment = None  # default='warn'
+
 	import sys
 	sys.path.append('../../../')
 	import tcr_embedding as tcr  # tune needs to reload this module
@@ -32,13 +43,10 @@ def objective(params, checkpoint_dir=None, adata=None):
 	from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 
 	# Change hyperparameters to match our syntax, this includes
-	# - Tune can only sample loguniformly for float, but not int
 	# - Optuna cannot sample within lists, so we have to add those values back into a list
-	params['hdim'] = int(params['hdim'])
 	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
-	params['scRNA_model_hyperparams']['gene_hidden'] = [int(params['scRNA_model_hyperparams']['gene_hidden'])]
-	params['shared_hidden'] = [int(params['shared_hidden'])]
-	params['zdim'] = int(params['zdim'])
+	params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
+	params['shared_hidden'] = [params['shared_hidden']]
 
 	# Init Comet-ML
 	current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
@@ -48,6 +56,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 	experiment = Experiment(api_key=COMET_ML_KEY, workspace='tcr', project_name=name)
 	experiment.log_parameters(params)
+	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
+	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
 	experiment.log_parameter('experiment_name', experiment_name)
 
 	adata = adata[adata.obs['set'] != 'test']
@@ -90,11 +100,13 @@ def objective(params, checkpoint_dir=None, adata=None):
 	with tune.checkpoint_dir(0) as checkpoint_dir:
 		save_path = checkpoint_dir
 
+	n_epochs = args.n_epochs * params['batch_size'] // 256
+	save_every = n_epochs // args.num_checkpoints
 	# Train Model
 	model.train(
 		experiment_name=name,
 		n_iters=None,
-		n_epochs=args.n_epochs,
+		n_epochs=n_epochs,
 		batch_size=params['batch_size'],
 		lr=params['lr'],
 		losses=params['losses'],  # list of losses for each modality: losses[0] := scRNA, losses[1] := TCR
@@ -105,7 +117,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		early_stop=50,
 		validate_every=5,
 		print_every=5,
-		save_every=args.save_every,
+		save_every=save_every,
 		save_path=save_path,
 		num_workers=0,
 		verbose=1,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
@@ -116,7 +128,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	best_epoch = -1
 	best_metric = -1
 	metrics_list = []
-	for e in tqdm(range(0, args.n_epochs+1, args.save_every), 'kNN for previous checkpoints: '):
+	for e in tqdm(range(0, args.n_epochs+1, save_every), 'kNN for previous checkpoints: '):
 		model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
 		test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
 		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
@@ -133,7 +145,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 			best_metric = metrics['weighted avg']['f1-score']
 			best_epoch = e
 
-		# tune.report(weighted_f1=metrics['weighted avg']['f1-score'])  # TODO Does it make sense to leave this in?
 
 	checkpoint_fps = os.listdir(save_path)
 	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
@@ -151,9 +162,9 @@ def objective(params, checkpoint_dir=None, adata=None):
 	metrics_list.append(metrics['weighted avg']['f1-score'])
 	for antigen, metric in metrics.items():
 		if antigen != 'accuracy':
-			experiment.log_metrics(metric, prefix=antigen, step=model.epoch, epoch=model.epoch)
+			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=model.epoch, epoch=model.epoch)
 		else:
-			experiment.log_metric('accuracy', metric, step=model.epoch, epoch=model.epoch)
+			experiment.log_metric('best_recon_accuracy', metric, step=model.epoch, epoch=model.epoch)
 
 	experiment.end()
 
@@ -161,22 +172,27 @@ def objective(params, checkpoint_dir=None, adata=None):
 	for metric in metrics_list:
 		print(f'Weighted F1: {metric}')
 		tune.report(weighted_f1=metric)
+		time.sleep(0.1)
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
 parser.add_argument('--model', type=str, default='single_scRNA')
 parser.add_argument('--name', type=str, default='')
-parser.add_argument('--n_epochs', type=int, default=30)
+parser.add_argument('--n_epochs', type=int, default=20)
 parser.add_argument('--num_samples', type=int, default=10)
-parser.add_argument('--save_every', type=int, default=10, help='Number of Trials for hyperparameter tuning')
+parser.add_argument('--num_checkpoints', type=int, default=3)
 parser.add_argument('--local_mode', action='store_true', help='If flag is set, then local mode in ray is activated which enables breakpoints')
+parser.add_argument('--num_cpu', type=int, default=4)
+parser.add_argument('--num_gpu', type=float, default=1.0)
 
 args = parser.parse_args()
 
 adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
+params = importlib.import_module(f'{args.model}_tune').params
+init_params = importlib.import_module(f'{args.model}_tune').init_params
 
-algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params[args.model])
+algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params)
 algo = ConcurrencyLimiter(algo, max_concurrent=1)
 
 ray.init(local_mode=args.local_mode)
@@ -191,8 +207,8 @@ analysis = tune.run(
 	mode='max',
 	search_alg=algo,
 	num_samples=args.num_samples,
-	config=params[args.model],
-	resources_per_trial={'cpu': 4, 'gpu': 1},
+	config=params,
+	resources_per_trial={'cpu': args.num_cpu, 'gpu': args.num_gpu},
 	local_dir=local_dir,
 	trial_dirname_creator=trial_dirname_creator,
 	verbose=3,
