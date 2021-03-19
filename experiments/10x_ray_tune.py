@@ -127,7 +127,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	best_metric = -1
 	metrics_list = []
 	for e in tqdm(range(0, args.n_epochs+1, save_every), 'kNN for previous checkpoints: '):
-		try:
+		if os.path.exists(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt')):
 			model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
 			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
 			summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
@@ -143,8 +143,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 			if metrics['weighted avg']['f1-score'] > best_metric:
 				best_metric = metrics['weighted avg']['f1-score']
 				best_epoch = e
-		except:
-			pass
 
 	checkpoint_fps = os.listdir(save_path)
 	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
