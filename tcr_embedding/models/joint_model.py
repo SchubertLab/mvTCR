@@ -89,7 +89,10 @@ class JointModel(VAEBaseModel):
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
 		scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
-		TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 1:  # For GRU and Transformer, as they don't predict start token
+			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+		else:  # For CNN, as it predicts start token
+			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq.flatten())
 		loss = scRNA_loss + TCR_loss
 
 		return loss, scRNA_loss, TCR_loss

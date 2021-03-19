@@ -121,7 +121,11 @@ class SingleModel(VAEBaseModel):
 		# Before feeding in the gt_seq, the start token needs to get removed.
 		# Further batch and seq dimension needs to be flatten
 		if self.model.seq_model_arch != 'None' and self.model.scRNA_model_arch == 'None':
-			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+			if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 1:  # For GRU and Transformer, as they don't predict start token
+				TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
+			else:  # For CNN, as it predicts start token
+				TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq.flatten())
+
 			loss = TCR_loss
 			scRNA_loss = torch.FloatTensor([0])
 		return loss, scRNA_loss, TCR_loss
