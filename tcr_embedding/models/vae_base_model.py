@@ -312,7 +312,7 @@ class VAEBaseModel:
 						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
 						no_improvements = 0
 					else:
-						no_improvements += 1
+						no_improvements += validate_every
 
 			if e % validate_every == 0:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
