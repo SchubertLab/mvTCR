@@ -17,7 +17,6 @@ import ray
 from ray import tune
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.optuna import OptunaSearch
-# from config_tune import params, init_params
 
 
 def trial_dirname_creator(trial):
@@ -184,7 +183,7 @@ parser.add_argument('--num_samples', type=int, default=10)
 parser.add_argument('--num_checkpoints', type=int, default=3)
 parser.add_argument('--local_mode', action='store_true', help='If flag is set, then local mode in ray is activated which enables breakpoints')
 parser.add_argument('--num_cpu', type=int, default=4)
-parser.add_argument('--num_gpu', type=float, default=1.0)
+parser.add_argument('--num_gpu', type=int, default=1)
 
 args = parser.parse_args()
 
