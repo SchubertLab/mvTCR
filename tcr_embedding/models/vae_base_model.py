@@ -304,7 +304,8 @@ class VAEBaseModel:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
 						no_improvements = 0
-					else:
+					# KL warmup periods is grace period
+					elif e > kl_annealing_epochs:
 						no_improvements += validate_every
 
 					if comet is not None:

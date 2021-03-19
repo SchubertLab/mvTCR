@@ -113,7 +113,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		kl_annealing_epochs=None,
 		val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
 		metadata=['binding_name', 'binding_label'],
-		early_stop=150,
+		early_stop=args.early_stop,
 		validate_every=5,
 		save_every=save_every,
 		save_path=save_path,
@@ -178,6 +178,7 @@ parser.add_argument('--resume', action='store_true', help='If flag is set, then 
 parser.add_argument('--model', type=str, default='single_scRNA')
 parser.add_argument('--suffix', type=str, default='')
 parser.add_argument('--n_epochs', type=int, default=1000)
+parser.add_argument('--early_stop', type=int, default=100)
 parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--num_checkpoints', type=int, default=20)
 parser.add_argument('--local_mode', action='store_true', help='If flag is set, then local mode in ray is activated which enables breakpoints')
