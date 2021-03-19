@@ -59,7 +59,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
 	experiment.log_parameter('experiment_name', experiment_name)
 
-	adata = adata[adata.obs['set'] != 'test']
+	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
 	if 'single' in args.model:
 		init_model = tcr.models.single_model.SingleModel
@@ -118,7 +118,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		save_every=save_every,
 		save_path=save_path,
 		num_workers=0,
-		verbose=1,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
+		verbose=0,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
 		device=None,
 		comet=experiment
 	)
@@ -178,7 +178,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
 parser.add_argument('--model', type=str, default='single_scRNA')
-parser.add_argument('--name', type=str, default='')
+parser.add_argument('--suffix', type=str, default='')
 parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--num_checkpoints', type=int, default=20)
@@ -189,10 +189,11 @@ parser.add_argument('--num_gpu', type=int, default=1)
 args = parser.parse_args()
 
 adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
+
 params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
-name = f'10x_tune_{args.model}{args.name}'
+name = f'10x_tune_{args.model}{args.suffix}'
 local_dir = '~/tcr-embedding/ray_results'
 ray.init(local_mode=args.local_mode)
 
