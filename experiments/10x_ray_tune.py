@@ -99,7 +99,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	with tune.checkpoint_dir(0) as checkpoint_dir:
 		save_path = checkpoint_dir
 
-	n_epochs = args.n_epochs * params['batch_size'] // 256
+	n_epochs = args.n_epochs * params['batch_size'] // 256  # to have same numbers of iteration
 	save_every = n_epochs // args.num_checkpoints
 	# Train Model
 	model.train(
@@ -111,11 +111,10 @@ def objective(params, checkpoint_dir=None, adata=None):
 		losses=params['losses'],  # list of losses for each modality: losses[0] := scRNA, losses[1] := TCR
 		loss_weights=params['loss_weights'], # [] or list of floats storing weighting of loss in order [scRNA, TCR, KLD]
 		kl_annealing_epochs=None,
-		val_split='set', # float or str, if float: split is determined automatically, if str: used as key for train-val column
+		val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
 		metadata=['binding_name', 'binding_label'],
 		early_stop=50,
 		validate_every=5,
-		print_every=5,
 		save_every=save_every,
 		save_path=save_path,
 		num_workers=0,
@@ -128,22 +127,24 @@ def objective(params, checkpoint_dir=None, adata=None):
 	best_metric = -1
 	metrics_list = []
 	for e in tqdm(range(0, args.n_epochs+1, save_every), 'kNN for previous checkpoints: '):
-		model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
-		test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
-										use_reduced_binders=True)
-		metrics = summary['knn']
-		metrics_list.append(metrics['weighted avg']['f1-score'])
-		for antigen, metric in metrics.items():
-			if antigen != 'accuracy':
-				experiment.log_metrics(metric, prefix=antigen, step=model.epoch, epoch=model.epoch)
-			else:
-				experiment.log_metric('accuracy', metric, step=model.epoch, epoch=model.epoch)
+		try:
+			model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
+			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
+			summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
+											use_reduced_binders=True)
+			metrics = summary['knn']
+			metrics_list.append(metrics['weighted avg']['f1-score'])
+			for antigen, metric in metrics.items():
+				if antigen != 'accuracy':
+					experiment.log_metrics(metric, prefix=antigen, step=model.epoch, epoch=model.epoch)
+				else:
+					experiment.log_metric('accuracy', metric, step=model.epoch, epoch=model.epoch)
 
-		if metrics['weighted avg']['f1-score'] > best_metric:
-			best_metric = metrics['weighted avg']['f1-score']
-			best_epoch = e
-
+			if metrics['weighted avg']['f1-score'] > best_metric:
+				best_metric = metrics['weighted avg']['f1-score']
+				best_epoch = e
+		except:
+			pass
 
 	checkpoint_fps = os.listdir(save_path)
 	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
@@ -178,9 +179,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
 parser.add_argument('--model', type=str, default='single_scRNA')
 parser.add_argument('--name', type=str, default='')
-parser.add_argument('--n_epochs', type=int, default=20)
-parser.add_argument('--num_samples', type=int, default=10)
-parser.add_argument('--num_checkpoints', type=int, default=3)
+parser.add_argument('--n_epochs', type=int, default=1000)
+parser.add_argument('--num_samples', type=int, default=100)
+parser.add_argument('--num_checkpoints', type=int, default=20)
 parser.add_argument('--local_mode', action='store_true', help='If flag is set, then local mode in ray is activated which enables breakpoints')
 parser.add_argument('--num_cpu', type=int, default=4)
 parser.add_argument('--num_gpu', type=int, default=1)
@@ -191,14 +192,12 @@ adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
 params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
-algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params)
-algo = ConcurrencyLimiter(algo, max_concurrent=1)
-
-ray.init(local_mode=args.local_mode)
-
 name = f'10x_tune_{args.model}{args.name}'
 local_dir = '~/tcr-embedding/ray_results'
+ray.init(local_mode=args.local_mode)
 
+algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params)
+algo = ConcurrencyLimiter(algo, max_concurrent=2)
 analysis = tune.run(
 	tune.with_parameters(objective, adata=adata),
 	name=name,
