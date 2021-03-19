@@ -113,7 +113,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		kl_annealing_epochs=None,
 		val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
 		metadata=['binding_name', 'binding_label'],
-		early_stop=50,
+		early_stop=150,
 		validate_every=5,
 		save_every=save_every,
 		save_path=save_path,

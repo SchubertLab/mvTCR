@@ -300,19 +300,21 @@ class VAEBaseModel:
 						print(f'Val TCR Loss: {TCR_loss_val_total}')
 						print(f'Val KLD Loss: {KLD_loss_val_total}')
 
-					if comet is not None:
-						comet.log_metrics({'Val Loss': loss_val_total,
-										   'Val scRNA Loss': scRNA_loss_val_total,
-										   'Val TCR Loss': TCR_loss_val_total,
-										   'Val KLD Loss': KLD_loss_val_total},
-										  step=e, epoch=e)
-
 					if loss_val_total < self.best_loss:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
 						no_improvements = 0
 					else:
 						no_improvements += validate_every
+
+					if comet is not None:
+						comet.log_metrics({'Val Loss': loss_val_total,
+										   'Val scRNA Loss': scRNA_loss_val_total,
+										   'Val TCR Loss': TCR_loss_val_total,
+										   'Val KLD Loss': KLD_loss_val_total,
+										   'Epochs without Improvements': no_improvements},
+										  step=e, epoch=e)
+
 
 			if e % validate_every == 0:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
@@ -321,6 +323,7 @@ class VAEBaseModel:
 				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
 
 			if early_stop is not None and no_improvements > early_stop:
+				print('Early stopped')
 				break
 
 	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[], device=None):
