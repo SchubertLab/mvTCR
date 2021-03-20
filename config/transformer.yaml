@@ -2,7 +2,6 @@
 
 seq_model_arch: Transformer
 seq_model_hyperparams:
-  num_tokens: 23
   embedding_size: 64
   num_heads: 4
   forward_expansion: 4
