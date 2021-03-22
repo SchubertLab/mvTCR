@@ -50,6 +50,11 @@ def objective(params, checkpoint_dir=None, adata=None):
 		params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
 
 	if params['seq_model_arch'] == 'CNN':
+		params['seq_model_hyperparams']['num_features'] = [
+			params['seq_model_hyperparams']['num_features_1'],
+			params['seq_model_hyperparams']['num_features_2'],
+			params['seq_model_hyperparams']['num_features_3']
+		]
 		# Encoder
 		params['seq_model_hyperparams']['encoder']['kernel'] = [
 			params['seq_model_hyperparams']['encoder']['kernel_1'],
@@ -61,11 +66,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['encoder']['stride_23'],
 			params['seq_model_hyperparams']['encoder']['stride_23']
 		]
-		params['seq_model_hyperparams']['encoder']['num_features'] = [
-			params['seq_model_hyperparams']['encoder']['num_features_1'],
-			params['seq_model_hyperparams']['encoder']['num_features_2'],
-			params['seq_model_hyperparams']['encoder']['num_features_3']
-		]
 		# Decoder
 		params['seq_model_hyperparams']['decoder']['kernel'] = [
 			params['seq_model_hyperparams']['decoder']['kernel_1'],
@@ -75,11 +75,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['decoder']['stride_1'],
 			params['seq_model_hyperparams']['decoder']['stride_2'],
 		]
-		params['seq_model_hyperparams']['decoder']['num_features'] = [
-			params['seq_model_hyperparams']['decoder']['num_features_1'],
-			params['seq_model_hyperparams']['decoder']['num_features_2'],
-			params['seq_model_hyperparams']['decoder']['num_features_3']
-		]
+
 	# Init Comet-ML
 	current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
 	experiment_name = name + '_' + current_datetime

@@ -4,7 +4,7 @@ import math
 
 
 class CNNEncoder(nn.Module):
-	def __init__(self, params, hdim, num_seq_labels):
+	def __init__(self, params, hdim, num_seq_labels, use_output_layer=True):
 		"""
 		Based on paper: DeepTCR is a deep learning framework for revealing sequence concepts within T-cell repertoires
 		:param params: hyperparameters as dict
@@ -13,7 +13,13 @@ class CNNEncoder(nn.Module):
 		"""
 		super(CNNEncoder, self).__init__()
 		input_len = params['max_tcr_length']
-		params = params['encoder']
+
+		params_enc = params['encoder']
+		params_enc['num_features'] = params['num_features']
+		params_enc['dropout'] = params['dropout']
+		params_enc['batch_norm'] = params['batch_norm']
+		params_enc['embedding_dim'] = params['embedding_dim']
+		params = params_enc
 
 		if type(params['kernel']) == int:
 			kernel = [params['kernel']] * params['num_layers']
@@ -58,7 +64,11 @@ class CNNEncoder(nn.Module):
 			cnn_blocks.append(nn.Sequential(*block))
 
 		self.cnn_blocks = nn.Sequential(*cnn_blocks)
-		self.output_layer = nn.Linear(num_features[-1] * output_len, hdim)
+
+		self.use_output_layer = use_output_layer
+		self.output_dim = num_features[-1] * output_len
+		if use_output_layer:
+			self.output_layer = nn.Linear(num_features[-1] * output_len, hdim)
 
 	def forward(self, tcr_seq, tcr_len):
 		x = self.embedding(tcr_seq)  # shape=[batch, sequence, feature]
@@ -66,8 +76,8 @@ class CNNEncoder(nn.Module):
 		x = self.cnn_blocks(x)  # shape=[batch, feature, sequence]
 
 		x = x.flatten(1)
-		x = self.output_layer(x)
-
+		if self.use_output_layer:
+			x = self.output_layer(x)
 		return x
 
 	def _activation(self, name):
@@ -94,10 +104,15 @@ class CNNDecoder(nn.Module):
 		super(CNNDecoder, self).__init__()
 
 		self.max_len = params['max_tcr_length']
-		params = params['decoder']
+		params_dec = params['decoder']
+		params_dec['num_features'] = [params_dec['initial_feature']] + params['num_features'][1:][::-1]
+		params_dec['dropout'] = params['dropout']
+		params_dec['batch_norm'] = params['batch_norm']
+		params_dec['embedding_dim'] = params['embedding_dim']
+		params = params_dec
 
 		if type(params['kernel']) == int:
-			kernel = [params['kernel']] * params['num_layers']
+			kernel = [params['kernel']] * (params['num_layers'] - 1)  # last dim is determined automatically
 		elif type(params['kernel']) == list:
 			kernel = params['kernel']
 		else:
@@ -111,7 +126,7 @@ class CNNDecoder(nn.Module):
 			raise ValueError()
 
 		if type(params['stride']) == int:
-			stride = [params['stride']] * params['num_layers']
+			stride = [params['stride']] * (params['num_layers'] - 1)  # last dim is determined automatically
 		elif type(params['stride']) == list:
 			stride = params['stride']
 		else:
@@ -144,19 +159,27 @@ class CNNDecoder(nn.Module):
 
 		# Last layer needs kernel and stride calculated beforehand
 		kernel_, stride_ = self.get_kernel_stride(current_len, self.max_len)
-		block = nn.ConvTranspose1d(num_features[-1], num_seq_labels, kernel_, stride_)
-		conv_transpose_blocks.append(nn.Sequential(block))
+		block = [nn.ConvTranspose1d(num_features[-1], params['embedding_dim'], kernel_, stride_)]
+		if params['batch_norm']:
+			block.append(nn.BatchNorm1d(params['embedding_dim']))
+		if params['activation'] != 'linear':
+			block.append(self._activation(params['activation']))
+		if params['dropout'] is not None and params['dropout'] != 0.0:
+			block.append(nn.Dropout(params['dropout']))
 
+		conv_transpose_blocks.append(nn.Sequential(*block))
 		self.conv_transpose_blocks = nn.Sequential(*conv_transpose_blocks)
+
+		self.output_layer = nn.Linear(params['embedding_dim'], num_seq_labels)
 
 	def forward(self, x, gt_input):
 		x = self.input_layer(x)
 		x = x.reshape(-1, self.initial_feat_dim, self.initial_len)  # "unflatten" to create [batch, feature, seq_len]
 		x = self.conv_transpose_blocks(x)
 
-		x = x.permute(0, 2, 1)  # shape=[batch, seq_len, num_aa]
+		x = x.permute(0, 2, 1)  # shape=[batch, seq_len, feature]
 		x = x[:, :self.max_len]  # only take the max_len sequence, as the deconvolution can only create certain discreet lengths
-
+		x = self.output_layer(x)
 		return x
 
 	def get_kernel_stride(self, current_len, max_len):
@@ -190,11 +213,11 @@ class CNNDecoder(nn.Module):
 
 if __name__ == '__main__':
 	import yaml
-	with open('config/cnn_test.yaml') as file:
+	with open('config/cnn_paper_oriented.yaml') as file:
 		params = yaml.load(file)
-	params['seq_model_hyperparams']['max_tcr_length'] = 1000
+	params['seq_model_hyperparams']['max_tcr_length'] = 40
 
-	encoder = CNNEncoder(params['seq_model_hyperparams'], hdim=params['hdim'], num_seq_labels=25).cuda()
+	encoder = CNNEncoder(params['seq_model_hyperparams'], hdim=params['hdim'], num_seq_labels=25, use_output_layer=True).cuda()
 	input_ = torch.randint(25, (10, params['seq_model_hyperparams']['max_tcr_length'])).cuda()
 	x = encoder(input_, 0)
 
