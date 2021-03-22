@@ -137,6 +137,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # to have same numbers of iteration
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
+	epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
 	save_every = n_epochs // args.num_checkpoints
 	# Train Model
 	model.train(

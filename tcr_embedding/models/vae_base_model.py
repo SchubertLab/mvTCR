@@ -198,6 +198,7 @@ class VAEBaseModel:
 		no_improvements = 0
 		self.epoch = 0
 		epoch2step = 256 / batch_size  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
+		epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
 
 		if continue_training:
 			# Load model and optimizer state_dict, as well as epoch and history
