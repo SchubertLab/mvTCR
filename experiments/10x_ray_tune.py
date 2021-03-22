@@ -44,8 +44,10 @@ def objective(params, checkpoint_dir=None, adata=None):
 	# Change hyperparameters to match our syntax, this includes
 	# - Optuna cannot sample within lists, so we have to add those values back into a list
 	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
-	params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
 	params['shared_hidden'] = [params['shared_hidden']]
+
+	if 'gene_hidden' in params['scRNA_model_hyperparams']:
+		params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
 
 	if params['seq_model_arch'] == 'CNN':
 		# Encoder
@@ -161,8 +163,12 @@ def objective(params, checkpoint_dir=None, adata=None):
 		if os.path.exists(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt')):
 			model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
 			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-			summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
-											use_reduced_binders=True)
+			try:
+				summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
+			except:
+				tune.report(weighted_f1=0.0)
+				return
+
 			metrics = summary['knn']
 			metrics_list.append(metrics['weighted avg']['f1-score'])
 			for antigen, metric in metrics.items():
@@ -185,8 +191,11 @@ def objective(params, checkpoint_dir=None, adata=None):
 	# Evaluate Model (best model based on reconstruction loss)
 	model.load(os.path.join(save_path, f'{name}_best_model.pt'))
 	test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-	summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
-										use_reduced_binders=True)
+	try:
+		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
+	except:
+		tune.report(weighted_f1=0.0)
+		return
 	metrics = summary['knn']
 	metrics_list.append(metrics['weighted avg']['f1-score'])
 	for antigen, metric in metrics.items():
