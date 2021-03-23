@@ -2,7 +2,7 @@ import scanpy as sc
 import yaml
 import tcr_embedding as tcr
 import tcr_embedding.evaluation.WrapperFunctions as Wrapper
-import tcr_embedding.evaluation.imputation as Imputation
+import tcr_embedding.evaluation.Imputation as Imputation
 
 PATH_BASE = '../'
 PATH_SAVE = '../saved_models/'
