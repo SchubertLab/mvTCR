@@ -44,10 +44,17 @@ def objective(params, checkpoint_dir=None, adata=None):
 	# Change hyperparameters to match our syntax, this includes
 	# - Optuna cannot sample within lists, so we have to add those values back into a list
 	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
-	params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
 	params['shared_hidden'] = [params['shared_hidden']]
 
+	if 'gene_hidden' in params['scRNA_model_hyperparams']:
+		params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
+
 	if params['seq_model_arch'] == 'CNN':
+		params['seq_model_hyperparams']['num_features'] = [
+			params['seq_model_hyperparams']['num_features_1'],
+			params['seq_model_hyperparams']['num_features_2'],
+			params['seq_model_hyperparams']['num_features_3']
+		]
 		# Encoder
 		params['seq_model_hyperparams']['encoder']['kernel'] = [
 			params['seq_model_hyperparams']['encoder']['kernel_1'],
@@ -59,11 +66,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['encoder']['stride_23'],
 			params['seq_model_hyperparams']['encoder']['stride_23']
 		]
-		params['seq_model_hyperparams']['encoder']['num_features'] = [
-			params['seq_model_hyperparams']['encoder']['num_features_1'],
-			params['seq_model_hyperparams']['encoder']['num_features_2'],
-			params['seq_model_hyperparams']['encoder']['num_features_3']
-		]
 		# Decoder
 		params['seq_model_hyperparams']['decoder']['kernel'] = [
 			params['seq_model_hyperparams']['decoder']['kernel_1'],
@@ -73,11 +75,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['decoder']['stride_1'],
 			params['seq_model_hyperparams']['decoder']['stride_2'],
 		]
-		params['seq_model_hyperparams']['decoder']['num_features'] = [
-			params['seq_model_hyperparams']['decoder']['num_features_1'],
-			params['seq_model_hyperparams']['decoder']['num_features_2'],
-			params['seq_model_hyperparams']['decoder']['num_features_3']
-		]
+
 	# Init Comet-ML
 	current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
 	experiment_name = name + '_' + current_datetime
@@ -89,6 +87,9 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
 	experiment.log_parameter('experiment_name', experiment_name)
+	if params['seq_model_arch'] == 'CNN':
+		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
+		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
 
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
@@ -131,6 +132,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 		save_path = checkpoint_dir
 
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # to have same numbers of iteration
+	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
+	epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
 	save_every = n_epochs // args.num_checkpoints
 	# Train Model
 	model.train(
@@ -157,19 +160,23 @@ def objective(params, checkpoint_dir=None, adata=None):
 	best_epoch = -1
 	best_metric = -1
 	metrics_list = []
-	for e in tqdm(range(0, args.n_epochs+1, save_every), 'kNN for previous checkpoints: '):
+	for e in tqdm(range(0, n_epochs+1, save_every), 'kNN for previous checkpoints: '):
 		if os.path.exists(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt')):
 			model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
 			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-			summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
-											use_reduced_binders=True)
+			try:
+				summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
+			except:
+				tune.report(weighted_f1=0.0)
+				return
+
 			metrics = summary['knn']
 			metrics_list.append(metrics['weighted avg']['f1-score'])
 			for antigen, metric in metrics.items():
 				if antigen != 'accuracy':
-					experiment.log_metrics(metric, prefix=antigen, step=model.epoch, epoch=model.epoch)
+					experiment.log_metrics(metric, prefix=antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
 				else:
-					experiment.log_metric('accuracy', metric, step=model.epoch, epoch=model.epoch)
+					experiment.log_metric('accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
 
 			if metrics['weighted avg']['f1-score'] > best_metric:
 				best_metric = metrics['weighted avg']['f1-score']
@@ -185,15 +192,19 @@ def objective(params, checkpoint_dir=None, adata=None):
 	# Evaluate Model (best model based on reconstruction loss)
 	model.load(os.path.join(save_path, f'{name}_best_model.pt'))
 	test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-	summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True,
-										use_reduced_binders=True)
+	try:
+		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
+	except:
+		tune.report(weighted_f1=0.0)
+		return
+
 	metrics = summary['knn']
 	metrics_list.append(metrics['weighted avg']['f1-score'])
 	for antigen, metric in metrics.items():
 		if antigen != 'accuracy':
-			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=model.epoch, epoch=model.epoch)
+			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
 		else:
-			experiment.log_metric('best_recon_accuracy', metric, step=model.epoch, epoch=model.epoch)
+			experiment.log_metric('best_recon_accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
 
 	experiment.end()
 
@@ -201,7 +212,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	for metric in metrics_list:
 		print(f'Weighted F1: {metric}')
 		tune.report(weighted_f1=metric)
-		time.sleep(0.1)
+		time.sleep(0.5)
 
 
 parser = argparse.ArgumentParser()

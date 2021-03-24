@@ -197,6 +197,8 @@ class VAEBaseModel:
 		self.best_loss = 99999999999
 		no_improvements = 0
 		self.epoch = 0
+		epoch2step = 256 / batch_size  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
+		epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
 
 		if continue_training:
 			# Load model and optimizer state_dict, as well as epoch and history
@@ -255,7 +257,7 @@ class VAEBaseModel:
 									   'Train scRNA Loss': scRNA_loss_train_total,
 									   'Train TCR Loss': TCR_loss_train_total,
 									   'Train KLD Loss': KLD_loss_train_total},
-									  step=e, epoch=e)
+									  step=int(e*epoch2step), epoch=e)
 
 			# VALIDATION LOOP
 			if e % validate_every == 0:
@@ -314,7 +316,7 @@ class VAEBaseModel:
 										   'Val TCR Loss': TCR_loss_val_total,
 										   'Val KLD Loss': KLD_loss_val_total,
 										   'Epochs without Improvements': no_improvements},
-										  step=e, epoch=e)
+										  step=int(e*epoch2step), epoch=e)
 
 
 			if e % validate_every == 0:
