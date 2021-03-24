@@ -21,7 +21,7 @@ params = {'activation': 'leakyrelu',
 			  'gene_hidden': tune.qrandint(500, 2000, 250),
 			  'output_activation': 'relu'
 		  },
-		  'seq_model_arch': 'CNN',
+		  'seq_model_arch': 'Transformer',
 		  'seq_model_hyperparams': {
 			  'embedding_size': tune.choice([16, 32, 64, 128]),
 			  'num_heads': tune.choice([1, 2, 4, 8, 16]),
