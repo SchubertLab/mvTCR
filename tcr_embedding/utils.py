@@ -1,6 +1,8 @@
 import numpy as np
 from tqdm import tqdm
 from sklearn.model_selection import GroupShuffleSplit
+import scanpy as sc
+from .constants import HIGH_COUNT_ANTIGENS, ANTIGEN_COLORS
 
 
 def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
@@ -109,3 +111,18 @@ def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, rando
 	test = df[df[group_col].isin(all_test)]
 
 	return train, test
+
+
+def plot_umap(adata, title):
+	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
+	sc.pp.neighbors(adata, use_rep='X')
+	sc.tl.umap(adata)
+	fig_donor = sc.pl.umap(adata, color='donor', title=title, return_fig=True)
+	fig_donor.tight_layout()
+	fig_clonotype = sc.pl.umap(adata, color='clonotype', title=title, return_fig=True)
+	fig_clonotype.tight_layout()
+	fig_antigen = sc.pl.umap(adata, color='binding_name', groups=HIGH_COUNT_ANTIGENS + ['no_data'], palette=ANTIGEN_COLORS, title=title, return_fig=True)
+	fig_antigen.tight_layout()
+	fig_antigen.set_size_inches(12, 4.8)
+
+	return fig_donor, fig_clonotype, fig_antigen

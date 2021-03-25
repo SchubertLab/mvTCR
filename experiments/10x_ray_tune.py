@@ -158,12 +158,14 @@ def objective(params, checkpoint_dir=None, adata=None):
 		comet=experiment
 	)
 	# Evaluate each checkpoint model
-	best_epoch = -1
+	best_checkpoint = None
 	best_metric = -1
 	metrics_list = []
-	for e in tqdm(range(0, n_epochs+1, save_every), 'kNN for previous checkpoints: '):
-		if os.path.exists(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt')):
-			model.load(os.path.join(save_path, f'{name}_epoch_{str(e).zfill(5)}.pt'))
+	checkpoint_fps = os.listdir(save_path)
+	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
+	for checkpoint_fp in tqdm(checkpoint_fps, 'kNN for previous checkpoints: '):
+		if os.path.exists(os.path.join(save_path, checkpoint_fp)):
+			model.load(os.path.join(save_path, checkpoint_fp))
 			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
 			try:
 				summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
@@ -181,13 +183,13 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 			if metrics['weighted avg']['f1-score'] > best_metric:
 				best_metric = metrics['weighted avg']['f1-score']
-				best_epoch = e
+				best_checkpoint = checkpoint_fp
 
-	checkpoint_fps = os.listdir(save_path)
-	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
-	checkpoint_fps.remove(f'{name}_epoch_{str(best_epoch).zfill(5)}.pt')
+	# Delete checkpoint files except best checkpoint
+	checkpoint_fps.remove(best_checkpoint)
 	for checkpoint_fp in checkpoint_fps:
 		os.remove(os.path.join(save_path, checkpoint_fp))
+
 
 	print('kNN for best reconstruction loss model')
 	# Evaluate Model (best model based on reconstruction loss)
@@ -206,6 +208,27 @@ def objective(params, checkpoint_dir=None, adata=None):
 			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
 		else:
 			experiment.log_metric('best_recon_accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
+	
+	# For visualization purpose, we set all rare specificities to no_data
+	adata.obs['binding_label'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = -1
+	adata.obs['binding_name'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = 'no_data'
+	# For visualization purpose, else the scanpy plot script thinks the rare specificities are still there and the colors get skewed
+	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
+
+	print('UMAP for best f1 score model')
+	model.load(os.path.join(save_path, best_checkpoint))
+	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
+	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_val_best_f1')
+	experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor)
+	experiment.log_figure(figure_name=name+'_val_best_f1_clonotype', figure=fig_clonotype)
+	experiment.log_figure(figure_name=name+'_val_best_f1_antigen', figure=fig_antigen)
+
+	print('UMAP for best reconstruction loss model')
+	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
+	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name + '_val_best_recon')
+	experiment.log_figure(figure_name=name + '_val_best_recon_donor', figure=fig_donor)
+	experiment.log_figure(figure_name=name + '_val_best_recon_clonotype', figure=fig_clonotype)
+	experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen)
 
 	experiment.end()
 
