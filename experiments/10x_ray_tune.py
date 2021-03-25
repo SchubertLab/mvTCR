@@ -76,6 +76,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['decoder']['stride_2'],
 		]
 
+	with tune.checkpoint_dir(0) as checkpoint_dir:
+		save_path = checkpoint_dir
 	# Init Comet-ML
 	current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
 	experiment_name = name + '_' + current_datetime
@@ -87,6 +89,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
 	experiment.log_parameter('experiment_name', experiment_name)
+	experiment.log_parameter('save_path', save_path)
 	if params['seq_model_arch'] == 'CNN':
 		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
@@ -128,8 +131,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 	#     with tune.checkpoint_dir(epoch) as checkpoint_dir:
 	#         path = os.path.join(checkpoint_dir, "checkpoint")
 	#         torch.save((net.state_dict(), optimizer.state_dict()), path)
-	with tune.checkpoint_dir(0) as checkpoint_dir:
-		save_path = checkpoint_dir
 
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # to have same numbers of iteration
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
