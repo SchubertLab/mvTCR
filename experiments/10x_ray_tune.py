@@ -23,28 +23,17 @@ def trial_dirname_creator(trial):
 	return f'{datetime.now().strftime("%Y%m%d_%H-%M-%S")}_{trial.trial_id}'
 
 
-def objective(params, checkpoint_dir=None, adata=None):
+def correct_params(params):
 	"""
-	Objective function for Ray Tune
-	:param params: Ray Tune will use this automatically
-	:param checkpoint_dir: Ray Tune will use this automatically
-	:param adata: adata containing train and eval
+	Ray Tune can't sample within lists, so this helper function puts the values back into lists
+	:param params: hyperparameter dict
+	:return: corrected hyperparameter dict
 	"""
-	import warnings
-	warnings.simplefilter(action='ignore', category=FutureWarning)
-	import pandas as pd
-	pd.options.mode.chained_assignment = None  # default='warn'
-
-	import sys
-	sys.path.append('../../../')
-	import tcr_embedding as tcr  # tune needs to reload this module
-	from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
-	from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
-
-	# Change hyperparameters to match our syntax, this includes
-	# - Optuna cannot sample within lists, so we have to add those values back into a list
 	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
 	params['shared_hidden'] = [params['shared_hidden']]
+
+	if 'loss_scRNA' in params:
+		params['losses'][0] = params['loss_scRNA']
 
 	if 'gene_hidden' in params['scRNA_model_hyperparams']:
 		params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
@@ -76,6 +65,30 @@ def objective(params, checkpoint_dir=None, adata=None):
 			params['seq_model_hyperparams']['decoder']['stride_2'],
 		]
 
+	return params
+
+
+def objective(params, checkpoint_dir=None, adata=None):
+	"""
+	Objective function for Ray Tune
+	:param params: Ray Tune will use this automatically
+	:param checkpoint_dir: Ray Tune will use this automatically
+	:param adata: adata containing train and eval
+	"""
+	import warnings
+	warnings.simplefilter(action='ignore', category=FutureWarning)
+	import pandas as pd
+	pd.options.mode.chained_assignment = None  # default='warn'
+
+	import sys
+	sys.path.append('../../../')
+	import tcr_embedding as tcr  # tune needs to reload this module
+	from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
+	from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
+
+	# Optuna cannot sample within lists, so we have to add those values back into a list
+	params = correct_params(params)
+
 	with tune.checkpoint_dir(0) as checkpoint_dir:
 		save_path = checkpoint_dir
 	# Init Comet-ML
@@ -83,7 +96,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment_name = name + '_' + current_datetime
 	with open('../../../comet_ml_key/API_key.txt') as f:
 		COMET_ML_KEY = f.read()
-
 	experiment = Experiment(api_key=COMET_ML_KEY, workspace='tcr', project_name=name)
 	experiment.log_parameters(params)
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
