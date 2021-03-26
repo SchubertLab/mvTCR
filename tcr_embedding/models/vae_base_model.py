@@ -102,7 +102,6 @@ class VAEBaseModel:
 			  metadata=[],
 			  early_stop=None,
 			  validate_every=10,
-			  print_every=10,
 			  save_every=100,
 			  save_path='../saved_models/',
 			  num_workers=0,
@@ -175,6 +174,7 @@ class VAEBaseModel:
 		else:
 			raise ValueError(f'length of loss_weights must be 3 or [].')
 
+		self.losses = losses
 		if losses[0] == 'MSE':
 			scRNA_criterion = nn.MSELoss()
 		elif losses[0] == 'NB':
@@ -544,7 +544,17 @@ class VAEBaseModel:
 	def load(self, filepath):
 		""" Load model and optimizer state, and auxiliary data for continuing training """
 		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
-		self.model.load_state_dict(model_file['state_dict'])
+		# TODO Backwards compatibility, previous (before 25.03.2021) version didn't had theta in model, can be deleted later, change back strict=True
+		missing_keys, unexpected_keys = self.model.load_state_dict(model_file['state_dict'], strict=False)
+		if not (('theta' in missing_keys and len(missing_keys) == 1) or (
+				len(missing_keys) == 0 and len(unexpected_keys) == 0)):
+			if len(unexpected_keys) > 0:
+				raise RuntimeError('Unexpected key(s) in state_dict: {}. '.format(
+					', '.join('"{}"'.format(k) for k in unexpected_keys)))
+			if len(missing_keys) > 0:
+				raise RuntimeError(
+					'Missing key(s) in state_dict: {}. '.format(', '.join('"{}"'.format(k) for k in missing_keys)))
+
 		self._train_history = model_file['train_history']
 		self._val_history = model_file['val_history']
 		self.epoch = model_file['epoch']

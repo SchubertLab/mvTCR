@@ -2,6 +2,15 @@
 import torch
 
 class NB(torch.nn.Module):
+    """
+    Yang Comment: Usage in forward:
+    x : Ground truth
+    mu: Prediction
+    theta: Another trainable parameter with shape=[xdim(number of count variables)],
+           simply initialize a nn.Parameter(torch.randn(xdim)) in the model
+
+    Be careful, we need the negative of the returned value: loss = -NBLoss
+    """
     def __init__(self, eps=1e-8, reduction='mean'):
         super(NB, self).__init__()
         self.eps = eps

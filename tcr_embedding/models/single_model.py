@@ -42,6 +42,9 @@ class SingleModelTorch(nn.Module):
 		self.shared_encoder = MLP(hdim*num_modalities, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
 		self.shared_decoder = MLP(zdim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 
+		# used for NB loss
+		self.theta = torch.nn.Parameter(torch.randn(xdim))
+
 	def forward(self, scRNA, tcr_seq, tcr_len):
 		"""
 		Forward pass of autoencoder
@@ -114,12 +117,23 @@ class SingleModel(VAEBaseModel):
 								seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
+		# Only scRNA model
 		if self.model.scRNA_model_arch != 'None' and self.model.seq_model_arch == 'None':
-			scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+			if self.losses[0] == 'MSE':
+				scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
+			elif self.losses[0] == 'NB':
+				dispersion = torch.exp(self.model.theta)
+				# decoder returns mean so mean = pred, be careful of the minus sign
+				# TODO Test NB code
+				scRNA_loss = - loss_weights[0] * scRNA_criterion(scRNA, scRNA_pred, dispersion)
+			else:
+				raise NotImplementedError(f'{self.losses[0]} is not implemented')
+
 			loss = scRNA_loss
 			TCR_loss = torch.FloatTensor([0])
-		# Before feeding in the gt_seq, the start token needs to get removed.
-		# Further batch and seq dimension needs to be flatten
+
+		# Only TCR model
+		# batch and seq dimension needs to be flatten
 		if self.model.seq_model_arch != 'None' and self.model.scRNA_model_arch == 'None':
 			if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 1:  # For GRU and Transformer, as they don't predict start token
 				TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())
