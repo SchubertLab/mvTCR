@@ -231,17 +231,17 @@ def objective(params, checkpoint_dir=None, adata=None):
 	model.load(os.path.join(save_path, best_checkpoint))
 	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
 	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_val_best_f1')
-	experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor)
-	experiment.log_figure(figure_name=name+'_val_best_f1_clonotype', figure=fig_clonotype)
-	experiment.log_figure(figure_name=name+'_val_best_f1_antigen', figure=fig_antigen)
+	experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor, step=model.epoch)
+	experiment.log_figure(figure_name=name+'_val_best_f1_clonotype', figure=fig_clonotype, step=model.epoch)
+	experiment.log_figure(figure_name=name+'_val_best_f1_antigen', figure=fig_antigen, step=model.epoch)
 
 	print('UMAP for best reconstruction loss model')
 	model.load(os.path.join(save_path, f'{name}_best_model.pt'))
 	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
 	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name + '_val_best_recon')
-	experiment.log_figure(figure_name=name + '_val_best_recon_donor', figure=fig_donor)
-	experiment.log_figure(figure_name=name + '_val_best_recon_clonotype', figure=fig_clonotype)
-	experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen)
+	experiment.log_figure(figure_name=name + '_val_best_recon_donor', figure=fig_donor, step=model.epoch)
+	experiment.log_figure(figure_name=name + '_val_best_recon_clonotype', figure=fig_clonotype, step=model.epoch)
+	experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
 	experiment.end()
 
