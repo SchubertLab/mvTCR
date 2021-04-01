@@ -7,5 +7,5 @@ def build_mlp_encoder(params, xdim, hdim):
 
 
 def build_mlp_decoder(params, xdim, hdim):
-	return MLP(hdim, xdim, params['gene_hidden'][::-1], params['activation'], params['output_activation'],
+	return MLP(hdim, xdim, params['gene_hidden'][::-1], 'linear', params['output_activation'],
 			   params['dropout'], params['batch_norm'], regularize_last_layer=False)
