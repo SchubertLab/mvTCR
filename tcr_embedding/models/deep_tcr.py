@@ -7,23 +7,21 @@ from tqdm import tqdm
 from collections import defaultdict
 import pandas as pd
 import scanpy as sc
-from sklearn.neighbors import KNeighborsClassifier
-
 
 from .losses.kld import KLD
-from tcr_embedding.datasets.scdataset import DeepTCRDataset, TCRDataset
+from tcr_embedding.datasets.scdataset import DeepTCRDataset
 from tcr_embedding.models.cnn import CNNEncoder, CNNDecoder
 
 
 class SharedEncoder(nn.Module):
-	def __init__(self, xdim, zdim):
+	def __init__(self, xdim, zdim, enc_hdim):
 		super(SharedEncoder, self).__init__()
 
-		self.layer1 = nn.Linear(xdim, 256)
-		self.layer2 = nn.Linear(256, 256)
+		self.layer1 = nn.Linear(xdim, enc_hdim[0])
+		self.layer2 = nn.Linear(enc_hdim[0], enc_hdim[1])
 
-		self.z_mean = nn.Linear(256, zdim)
-		self.z_logvar = nn.Linear(256, zdim)
+		self.z_mean = nn.Linear(enc_hdim[1], zdim)
+		self.z_logvar = nn.Linear(enc_hdim[1], zdim)
 		self.softplus = nn.Softplus()
 
 	def forward(self, x):
@@ -37,10 +35,10 @@ class SharedEncoder(nn.Module):
 
 
 class SharedDecoder(nn.Module):
-	def __init__(self, zdim):
+	def __init__(self, zdim, dec_hdim):
 		super(SharedDecoder, self).__init__()
-		self.layer1 = nn.Linear(zdim, 128)
-		self.layer2 = nn.Linear(128, 256)
+		self.layer1 = nn.Linear(zdim, dec_hdim[0])
+		self.layer2 = nn.Linear(dec_hdim[0], dec_hdim[1])
 
 	def forward(self, x):
 		x = self.layer1(x)
@@ -49,46 +47,75 @@ class SharedDecoder(nn.Module):
 
 
 class VDJEncoder(nn.Module):
-	def __init__(self, vdj_embedding_dim, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta):
+	def __init__(self, vdj_embedding_dim, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, use_embedding_matrix):
 		super(VDJEncoder, self).__init__()
-		self.embedding_v_alpha = nn.Embedding(num_embeddings=num_v_alpha, embedding_dim=vdj_embedding_dim)
-		self.embedding_j_alpha = nn.Embedding(num_embeddings=num_j_alpha, embedding_dim=vdj_embedding_dim)
+		self.use_embedding_matrix = use_embedding_matrix
+		self.num_v_alpha = num_v_alpha
+		self.num_j_alpha = num_j_alpha
+		self.num_v_beta = num_v_beta
+		self.num_d_beta = num_d_beta
+		self.num_j_beta = num_j_beta
 
-		self.embedding_v_beta = nn.Embedding(num_embeddings=num_v_beta, embedding_dim=vdj_embedding_dim)
-		self.embedding_d_beta = nn.Embedding(num_embeddings=num_d_beta, embedding_dim=vdj_embedding_dim)
-		self.embedding_j_beta = nn.Embedding(num_embeddings=num_j_beta, embedding_dim=vdj_embedding_dim)
+		if self.use_embedding_matrix:
+			self.one_hot = nn.functional.one_hot
+			self.embedding_v_alpha = nn.Parameter(torch.randn(num_v_alpha, vdj_embedding_dim))
+			self.embedding_j_alpha = nn.Parameter(torch.randn(num_j_alpha, vdj_embedding_dim))
+
+			self.embedding_v_beta = nn.Parameter(torch.randn(num_v_beta, vdj_embedding_dim))
+			self.embedding_d_beta = nn.Parameter(torch.randn(num_d_beta, vdj_embedding_dim))
+			self.embedding_j_beta = nn.Parameter(torch.randn(num_j_beta, vdj_embedding_dim))
+		else:
+			self.embedding_v_alpha = nn.Embedding(num_embeddings=num_v_alpha, embedding_dim=vdj_embedding_dim)
+			self.embedding_j_alpha = nn.Embedding(num_embeddings=num_j_alpha, embedding_dim=vdj_embedding_dim)
+
+			self.embedding_v_beta = nn.Embedding(num_embeddings=num_v_beta, embedding_dim=vdj_embedding_dim)
+			self.embedding_d_beta = nn.Embedding(num_embeddings=num_d_beta, embedding_dim=vdj_embedding_dim)
+			self.embedding_j_beta = nn.Embedding(num_embeddings=num_j_beta, embedding_dim=vdj_embedding_dim)
 
 	def forward(self, x):
-		v_alpha = self.embedding_v_alpha(x[:, 0])
-		j_alpha = self.embedding_j_alpha(x[:, 1])
-		v_beta = self.embedding_v_beta(x[:, 2])
-		d_beta = self.embedding_d_beta(x[:, 3])
-		j_beta = self.embedding_j_beta(x[:, 4])
+		if self.use_embedding_matrix:
+			v_alpha = torch.matmul(self.one_hot(x[:, 0], self.num_v_alpha).float(), self.embedding_v_alpha)
+			j_alpha = torch.matmul(self.one_hot(x[:, 1], self.num_j_alpha).float(), self.embedding_j_alpha)
+			v_beta = torch.matmul(self.one_hot(x[:, 2], self.num_v_beta).float(), self.embedding_v_beta)
+			d_beta = torch.matmul(self.one_hot(x[:, 3], self.num_d_beta).float(), self.embedding_d_beta)
+			j_beta = torch.matmul(self.one_hot(x[:, 4], self.num_j_beta).float(), self.embedding_j_beta)
+
+		else:
+			v_alpha = self.embedding_v_alpha(x[:, 0])
+			j_alpha = self.embedding_j_alpha(x[:, 1])
+			v_beta = self.embedding_v_beta(x[:, 2])
+			d_beta = self.embedding_d_beta(x[:, 3])
+			j_beta = self.embedding_j_beta(x[:, 4])
 
 		return v_alpha, j_alpha, v_beta, d_beta, j_beta
 
 
 class VDJDecoder(nn.Module):
-	def __init__(self, hdim, vdj_embedding_dim, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta):
+	def __init__(self, hdim, vdj_embedding_dim, vdj_layers, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, use_embedding_matrix):
 		super(VDJDecoder, self).__init__()
+		self.use_embedding_matrix = use_embedding_matrix
 
-		self.decoder_v_alpha = self.build_decoder(hdim, vdj_embedding_dim, num_v_alpha)
-		self.decoder_j_alpha = self.build_decoder(hdim, vdj_embedding_dim, num_j_alpha)
+		self.decoder_v_alpha = self.build_decoder(hdim, vdj_layers, vdj_embedding_dim, num_v_alpha)
+		self.decoder_j_alpha = self.build_decoder(hdim, vdj_layers, vdj_embedding_dim, num_j_alpha)
 
-		self.decoder_v_beta = self.build_decoder(hdim, vdj_embedding_dim, num_v_beta)
-		self.decoder_d_beta = self.build_decoder(hdim, vdj_embedding_dim, num_d_beta)
-		self.decoder_j_beta = self.build_decoder(hdim, vdj_embedding_dim, num_j_beta)
+		self.decoder_v_beta = self.build_decoder(hdim, vdj_layers, vdj_embedding_dim, num_v_beta)
+		self.decoder_d_beta = self.build_decoder(hdim, vdj_layers, vdj_embedding_dim, num_d_beta)
+		self.decoder_j_beta = self.build_decoder(hdim, vdj_layers, vdj_embedding_dim, num_j_beta)
 
-	def build_decoder(self, zdim, vdj_embedding_dim, num_genes):
-		decoder = nn.Sequential(
-			nn.Linear(zdim, 128),
+	def build_decoder(self, hdim, vdj_layers, vdj_embedding_dim, num_genes):
+		decoder = nn.ModuleList([
+			nn.Linear(hdim, vdj_layers[0]),
 			nn.ReLU(inplace=True),
-			nn.Linear(128, 64),
+			nn.Linear(vdj_layers[0], vdj_layers[1]),
 			nn.ReLU(inplace=True),
-			nn.Linear(64, vdj_embedding_dim),
-			nn.ReLU(inplace=True),
-			nn.Linear(vdj_embedding_dim, num_genes)
-		)
+			nn.Linear(vdj_layers[1], vdj_embedding_dim),
+			nn.ReLU(inplace=True)])
+
+		if not self.use_embedding_matrix:
+			decoder.append(nn.Linear(vdj_embedding_dim, num_genes))
+
+		decoder = nn.Sequential(*decoder)
+
 		return decoder
 
 	def forward(self, x):
@@ -102,19 +129,31 @@ class VDJDecoder(nn.Module):
 
 
 class DeepTCRTorch(nn.Module):
-	def __init__(self, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, num_seq_labels, zdim, seq_model_hyperparams, vdj_embedding_dim=48):
+	def __init__(self, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, num_seq_labels,
+				 params, seq_model_hyperparams):
+		"""
+		If use_embedding_matrix = True, then vdj gets one-hot-encoded and multiplied with embedding matrix
+		The Decoder will then use the transposed embedding matrix to get back the predicted vdj
+		This is the original implementation of DeepTCR
+		"""
+
 		super(DeepTCRTorch, self).__init__()
+		self.use_vdj = params['use_vdj']
+		self.use_embedding_matrix = params['use_embedding_matrix']
 
-		self.alpha_encoder = CNNEncoder(seq_model_hyperparams, None, num_seq_labels, use_output_layer=False)
-		self.beta_encoder = CNNEncoder(seq_model_hyperparams, None, num_seq_labels, use_output_layer=False)
-		self.alpha_decoder = CNNDecoder(seq_model_hyperparams, zdim, num_seq_labels)
-		self.beta_decoder = CNNDecoder(seq_model_hyperparams, zdim, num_seq_labels)
+		self.alpha_encoder = CNNEncoder(seq_model_hyperparams, None, num_seq_labels, use_output_layer=False, use_embedding_matrix=params['use_embedding_matrix'])
+		self.beta_encoder = CNNEncoder(seq_model_hyperparams, None, num_seq_labels, use_output_layer=False, use_embedding_matrix=params['use_embedding_matrix'])
+		self.alpha_decoder = CNNDecoder(seq_model_hyperparams, params['dec_hdim'][-1], num_seq_labels, use_embedding_matrix=params['use_embedding_matrix'])
+		self.beta_decoder = CNNDecoder(seq_model_hyperparams, params['dec_hdim'][-1], num_seq_labels, use_embedding_matrix=params['use_embedding_matrix'])
 
-		self.vdj_encoder = VDJEncoder(vdj_embedding_dim, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta)
-		self.vdj_decoder = VDJDecoder(256, vdj_embedding_dim, num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta)
+		if self.use_vdj:
+			self.vdj_encoder = VDJEncoder(params['vdj_embedding_dim'], num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, params['use_embedding_matrix'])
+			self.vdj_decoder = VDJDecoder(params['dec_hdim'][-1], params['vdj_embedding_dim'], params['vdj_dec_layers'], num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, params['use_embedding_matrix'])
+			self.shared_encoder = SharedEncoder((self.alpha_encoder.output_dim*2)+(params['vdj_embedding_dim']*5), params['zdim'], params['enc_hdim'])
+		else:
+			self.shared_encoder = SharedEncoder((self.alpha_encoder.output_dim*2), params['zdim'], params['enc_hdim'])
 
-		self.shared_encoder = SharedEncoder((self.alpha_encoder.output_dim*2)+(vdj_embedding_dim*5), zdim=zdim)
-		self.shared_decoder = SharedDecoder(zdim)
+		self.shared_decoder = SharedDecoder(params['zdim'], params['dec_hdim'])
 
 	def forward(self, alpha_seq, beta_seq, vdj):
 		"""
@@ -124,19 +163,40 @@ class DeepTCRTorch(nn.Module):
 		:param vdj: torch.LongTensor shape=[batch_size, 5]
 		:return: alpha_pred, beta_pred, vdj_pred
 		"""
-
-		h_v_alpha, h_j_alpha, h_v_beta, h_d_beta, h_j_beta = self.vdj_encoder(vdj)  # shape=[batch_size, embedding_dim]
+		# TCR Encoder
 		h_alpha_seq = self.alpha_encoder(alpha_seq, None)  # shape=[batch_size, hdim]
 		h_beta_seq = self.beta_encoder(beta_seq, None)  # shape=[batch_size, hdim]
 
-		joint_feature = torch.cat([h_v_alpha, h_j_alpha, h_v_beta, h_d_beta, h_j_beta, h_alpha_seq, h_beta_seq], dim=-1)
+		# VDJ Encoder
+		if self.use_vdj:
+			h_v_alpha, h_j_alpha, h_v_beta, h_d_beta, h_j_beta = self.vdj_encoder(vdj)  # shape=[batch_size, embedding_dim]
+			joint_feature = torch.cat([h_v_alpha, h_j_alpha, h_v_beta, h_d_beta, h_j_beta, h_alpha_seq, h_beta_seq], dim=-1)
+		else:
+			joint_feature = torch.cat([h_alpha_seq, h_beta_seq], dim=-1)
+
+		# Shared VAE
 		mu, logvar = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
 		z = self.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
 		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim*2]
 
-		v_alpha, j_alpha, v_beta, d_beta, j_beta = self.vdj_decoder(joint_dec_feature)  # shape=[batch_size, num_vdj_genes]
+		# TCR Decoder
 		alpha_seq_pred = self.alpha_decoder(joint_dec_feature, None)
 		beta_seq_pred = self.beta_decoder(joint_dec_feature, None)
+		if self.use_embedding_matrix:
+			alpha_seq_pred = torch.matmul(alpha_seq_pred, self.alpha_encoder.embedding.T)
+			beta_seq_pred = torch.matmul(beta_seq_pred, self.beta_encoder.embedding.T)
+
+		# VDJ Decoder
+		if self.use_vdj:
+			v_alpha, j_alpha, v_beta, d_beta, j_beta = self.vdj_decoder(joint_dec_feature)  # shape=[batch_size, num_vdj_genes]
+			if self.use_embedding_matrix:
+				v_alpha = torch.matmul(v_alpha, self.vdj_encoder.embedding_v_alpha.T)
+				j_alpha = torch.matmul(j_alpha, self.vdj_encoder.embedding_j_alpha.T)
+				v_beta = torch.matmul(v_beta, self.vdj_encoder.embedding_v_beta.T)
+				d_beta = torch.matmul(d_beta, self.vdj_encoder.embedding_d_beta.T)
+				j_beta = torch.matmul(j_beta, self.vdj_encoder.embedding_j_beta.T)
+		else:
+			v_alpha, j_alpha, v_beta, d_beta, j_beta = None, None, None, None, None
 
 		return z, mu, logvar, v_alpha, j_alpha, v_beta, d_beta, j_beta, alpha_seq_pred, beta_seq_pred
 
@@ -155,8 +215,8 @@ class DeepTCRTorch(nn.Module):
 class DeepTCR:
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
+				 params,
 				 seq_model_hyperparams,  # dict of seq model hyperparameters
-				 zdim=256,  # zdim
 				 names=[],
 				 ):
 		"""
@@ -167,18 +227,23 @@ class DeepTCR:
 		"""
 
 		self.adatas = adatas
-		self.aa_to_id = adatas[0].uns['aa_to_id']
+		self.aa_to_id = adatas[0].uns['aa_to_id'].copy()
+		del self.aa_to_id['+']
+		del self.aa_to_id['<']
+		del self.aa_to_id['>']
+
 		self.v_alpha_to_id = adatas[0].uns['v_alpha_to_id']
 		self.j_alpha_to_id = adatas[0].uns['j_alpha_to_id']
 		self.v_beta_to_id = adatas[0].uns['v_beta_to_id']
 		self.d_beta_to_id = adatas[0].uns['d_beta_to_id']
 		self.j_beta_to_id = adatas[0].uns['j_beta_to_id']
+		self.use_vdj = params['use_vdj']
 
 		self._train_history = defaultdict(list)
 		self._val_history = defaultdict(list)
 
-		seq_model_hyperparams['max_tcr_length'] = 40
-		self.params = {'seq_model_hyperparams': seq_model_hyperparams, 'zdim': zdim}
+		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
+		self.params = params
 
 		if len(names) == 0:
 			names = [f'dataset_{i}' for i in range(len(adatas))]
@@ -191,7 +256,8 @@ class DeepTCR:
 		num_d_beta = len(self.d_beta_to_id)
 		num_j_beta = len(self.j_beta_to_id)
 
-		self.model = DeepTCRTorch(num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, num_seq_labels, zdim, seq_model_hyperparams)
+		self.model = DeepTCRTorch(num_v_alpha, num_j_alpha, num_v_beta, num_d_beta, num_j_beta, num_seq_labels,
+								  params, seq_model_hyperparams)
 
 	def train(self,
 			  experiment_name='example',
@@ -265,7 +331,7 @@ class DeepTCR:
 		else:
 			raise ValueError(f'length of loss_weights must be 3 or [].')
 
-		recon_criterion = nn.CrossEntropyLoss(ignore_index=self.aa_to_id['_'])  # DeepTCR doesn't ignore idx 0
+		recon_criterion = nn.CrossEntropyLoss()  # ignore_index=self.aa_to_id['_'])  # DeepTCR doesn't ignore idx 0
 		KL_criterion = KLD()
 
 		self.model = self.model.to(device)
@@ -309,14 +375,18 @@ class DeepTCR:
 				alpha_seq_loss = loss_weights[1] * recon_criterion(alpha_seq_p.flatten(end_dim=1), alpha_seq.flatten())
 				beta_seq_loss = loss_weights[1] * recon_criterion(beta_seq_p.flatten(end_dim=1), beta_seq.flatten())
 
-				v_alpha_loss = loss_weights[0] * recon_criterion(v_alpha_p, vdj[:, 0])
-				j_alpha_loss = loss_weights[0] * recon_criterion(j_alpha_p, vdj[:, 1])
+				if self.use_vdj:
+					v_alpha_loss = loss_weights[0] * recon_criterion(v_alpha_p, vdj[:, 0])
+					j_alpha_loss = loss_weights[0] * recon_criterion(j_alpha_p, vdj[:, 1])
 
-				v_beta_loss = loss_weights[0] * recon_criterion(v_beta_p, vdj[:, 2])
-				d_beta_loss = loss_weights[0] * recon_criterion(d_beta_p, vdj[:, 3])
-				j_beta_loss = loss_weights[0] * recon_criterion(j_beta_p, vdj[:, 4])
+					v_beta_loss = loss_weights[0] * recon_criterion(v_beta_p, vdj[:, 2])
+					d_beta_loss = loss_weights[0] * recon_criterion(d_beta_p, vdj[:, 3])
+					j_beta_loss = loss_weights[0] * recon_criterion(j_beta_p, vdj[:, 4])
 
-				loss = alpha_seq_loss + beta_seq_loss + v_alpha_loss + j_alpha_loss + v_beta_loss + d_beta_loss + j_beta_loss + KLD_loss
+					loss = alpha_seq_loss + beta_seq_loss + v_alpha_loss + j_alpha_loss + v_beta_loss + d_beta_loss + j_beta_loss + KLD_loss
+				else:
+					v_alpha_loss, j_alpha_loss, v_beta_loss, d_beta_loss, j_beta_loss = torch.FloatTensor([0, 0, 0, 0, 0])
+					loss = alpha_seq_loss + beta_seq_loss + KLD_loss
 
 				self.optimizer.zero_grad()
 				loss.backward()
@@ -402,14 +472,19 @@ class DeepTCR:
 						alpha_seq_loss = loss_weights[1] * recon_criterion(alpha_seq_p.flatten(end_dim=1), alpha_seq.flatten())
 						beta_seq_loss = loss_weights[1] * recon_criterion(beta_seq_p.flatten(end_dim=1), beta_seq.flatten())
 
-						v_alpha_loss = loss_weights[0] * recon_criterion(v_alpha_p, vdj[:, 0])
-						j_alpha_loss = loss_weights[0] * recon_criterion(j_alpha_p, vdj[:, 1])
+						if self.use_vdj:
+							v_alpha_loss = loss_weights[0] * recon_criterion(v_alpha_p, vdj[:, 0])
+							j_alpha_loss = loss_weights[0] * recon_criterion(j_alpha_p, vdj[:, 1])
 
-						v_beta_loss = loss_weights[0] * recon_criterion(v_beta_p, vdj[:, 2])
-						d_beta_loss = loss_weights[0] * recon_criterion(d_beta_p, vdj[:, 3])
-						j_beta_loss = loss_weights[0] * recon_criterion(j_beta_p, vdj[:, 4])
+							v_beta_loss = loss_weights[0] * recon_criterion(v_beta_p, vdj[:, 2])
+							d_beta_loss = loss_weights[0] * recon_criterion(d_beta_p, vdj[:, 3])
+							j_beta_loss = loss_weights[0] * recon_criterion(j_beta_p, vdj[:, 4])
 
-						loss = alpha_seq_loss + beta_seq_loss + v_alpha_loss + j_alpha_loss + v_beta_loss + d_beta_loss + j_beta_loss + KLD_loss
+							loss = alpha_seq_loss + beta_seq_loss + v_alpha_loss + j_alpha_loss + v_beta_loss + d_beta_loss + j_beta_loss + KLD_loss
+						else:
+							v_alpha_loss, j_alpha_loss, v_beta_loss, d_beta_loss, j_beta_loss = torch.FloatTensor(
+								[0, 0, 0, 0, 0])
+							loss = alpha_seq_loss + beta_seq_loss + KLD_loss
 
 						loss_val_total.append(loss.detach())
 						alpha_seq_loss_total.append(alpha_seq_loss.detach())
@@ -459,7 +534,8 @@ class DeepTCR:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
 						no_improvements = 0
-					# KL warmup periods is grace period
+					elif e > 300:
+						no_improvements += validate_every
 
 					if comet is not None:
 						comet.log_metrics({'Val Loss': loss_val_total,

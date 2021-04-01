@@ -19,6 +19,13 @@ seq_model_hyperparams:
     num_layers: 3
     activation: relu
 
+use_vdj: True
+vdj_embedding_dim: 48
+vdj_dec_layers: [ 128, 64 ]
+
+use_embedding_matrix: True
+dec_hdim: [ 128, 256 ]
+enc_hdim: [ 256, 256 ]
 zdim: 256
 
 # Loss and optimizer
