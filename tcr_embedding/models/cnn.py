@@ -4,7 +4,7 @@ import math
 
 
 class CNNEncoder(nn.Module):
-	def __init__(self, params, hdim, num_seq_labels, use_output_layer=True):
+	def __init__(self, params, hdim, num_seq_labels, use_output_layer=True, use_embedding_matrix=False):
 		"""
 		Based on paper: DeepTCR is a deep learning framework for revealing sequence concepts within T-cell repertoires
 		:param params: hyperparameters as dict
@@ -45,7 +45,13 @@ class CNNEncoder(nn.Module):
 		assert len(stride) == len(kernel)
 		assert len(kernel) == len(num_features)
 
-		self.embedding = nn.Embedding(num_embeddings=num_seq_labels, embedding_dim=params['embedding_dim'], padding_idx=0)
+		self.use_embedding_matrix = use_embedding_matrix
+		self.num_seq_labels = num_seq_labels
+		if use_embedding_matrix:
+			self.one_hot = nn.functional.one_hot
+			self.embedding = nn.Parameter(torch.randn(num_seq_labels, params['embedding_dim']))
+		else:
+			self.embedding = nn.Embedding(num_embeddings=num_seq_labels, embedding_dim=params['embedding_dim'], padding_idx=0)
 
 		input_features = [params['embedding_dim']] + num_features[:-1]
 		output_len = input_len  # Sequence length after all convolution blocks
@@ -71,7 +77,10 @@ class CNNEncoder(nn.Module):
 			self.output_layer = nn.Linear(num_features[-1] * output_len, hdim)
 
 	def forward(self, tcr_seq, tcr_len):
-		x = self.embedding(tcr_seq)  # shape=[batch, sequence, feature]
+		if self.use_embedding_matrix:
+			x = torch.matmul(self.one_hot(tcr_seq, self.num_seq_labels).float(), self.embedding)
+		else:
+			x = self.embedding(tcr_seq)  # shape=[batch, sequence, feature]
 		x = x.permute(0, 2, 1)  # shape=[batch, feature, sequence]
 		x = self.cnn_blocks(x)  # shape=[batch, feature, sequence]
 
@@ -94,7 +103,7 @@ class CNNEncoder(nn.Module):
 
 
 class CNNDecoder(nn.Module):
-	def __init__(self, params, hdim, num_seq_labels):
+	def __init__(self, params, hdim, num_seq_labels, use_embedding_matrix=False):
 		"""
 		Based on paper: DeepTCR is a deep learning framework for revealing sequence concepts within T-cell repertoires
 		:param params: hyperparameters as dict
@@ -170,7 +179,9 @@ class CNNDecoder(nn.Module):
 		conv_transpose_blocks.append(nn.Sequential(*block))
 		self.conv_transpose_blocks = nn.Sequential(*conv_transpose_blocks)
 
-		self.output_layer = nn.Linear(params['embedding_dim'], num_seq_labels)
+		self.use_embedding_matrix = use_embedding_matrix
+		if not use_embedding_matrix:
+			self.output_layer = nn.Linear(params['embedding_dim'], num_seq_labels)
 
 	def forward(self, x, gt_input):
 		x = self.input_layer(x)
@@ -179,7 +190,8 @@ class CNNDecoder(nn.Module):
 
 		x = x.permute(0, 2, 1)  # shape=[batch, seq_len, feature]
 		x = x[:, :self.max_len]  # only take the max_len sequence, as the deconvolution can only create certain discreet lengths
-		x = self.output_layer(x)
+		if not self.use_embedding_matrix:
+			x = self.output_layer(x)
 		return x
 
 	def get_kernel_stride(self, current_len, max_len):
