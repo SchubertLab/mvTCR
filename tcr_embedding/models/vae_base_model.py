@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import os
 import numpy as np
 from tqdm import tqdm
@@ -8,13 +9,15 @@ from collections import defaultdict
 import pandas as pd
 import scanpy as sc
 from sklearn.neighbors import KNeighborsClassifier
+from abc import ABC, abstractmethod
 
 from tcr_embedding.datasets.scdataset import TCRDataset
 from .losses.nb import NB
 from .losses.kld import KLD
+from .base_model import BaseModel
 
 
-class VAEBaseModel:
+class VAEBaseModel(BaseModel, ABC):
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
 				 aa_to_id,
@@ -101,9 +104,12 @@ class VAEBaseModel:
 			  val_split='set',
 			  metadata=[],
 			  early_stop=None,
+			  balanced_sampling=None,
+			  log_divisor=10,
 			  validate_every=10,
 			  save_every=100,
 			  save_path='../saved_models/',
+			  save_last_model=True,
 			  num_workers=0,
 			  verbose=1,
 			  continue_training=False,
@@ -123,8 +129,8 @@ class VAEBaseModel:
 		:param val_split: str or float, if str it indicates the adata.obs[val_split] containing 'train' and 'val', if float, adata is split randomly by val_split
 		:param metadata: list of str, list of metadata that is needed, not really useful at the moment #TODO maybe delete this
 		:param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
+		:param balanced_sampling: None or str, indicate adata.obs column to balance
 		:param validate_every: int, epochs to validate
-		:param print_every: not used  # TODO maybe delete this, only here for backward compatibility
 		:param save_every: int, epochs to save intermediate model weights
 		:param save_path: str, path to directory to save model
 		:param num_workers: int, number of workers for dataloader
@@ -141,16 +147,19 @@ class VAEBaseModel:
 		print('Create Dataloader')
 		# Initialize dataloader
 		if continue_training:
-			# train_masks = self.load_data(f'../saved_models/{experiment_name}_data.pt')
 			self.train_masks = self.load_data(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 			train_datasets, val_datasets, _ = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, self.train_masks)
 		else:
 			train_datasets, val_datasets, self.train_masks = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
-			# self.save_data(f'../saved_models/{experiment_name}_data.pt', train_masks)
-			# self.train_masks = train_masks
 
-		train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, collate_fn=None, num_workers=num_workers)
-		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, collate_fn=None, num_workers=num_workers)
+		if balanced_sampling is None:
+			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+		else:
+			sampling_weights = self.calculate_sampling_weights(self.adatas, self.train_masks, self.names, class_column=balanced_sampling,log_divisor=log_divisor)
+			sampler = WeightedRandomSampler(weights=sampling_weights, num_samples=len(sampling_weights), replacement=True)
+			# shuffle is mutually exclusive to sampler, but sampler is anyway shuffled
+			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=sampler)
+		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 		print('Dataloader created')
 
 		try:
@@ -213,14 +222,14 @@ class VAEBaseModel:
 			scRNA_loss_train_total = []
 			TCR_loss_train_total = []
 			KLD_loss_train_total = []
-			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in train_dataloader:
+			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
 				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
-				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion)
+				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 				loss = loss + KLD_loss
 
 				self.optimizer.zero_grad()
@@ -232,7 +241,6 @@ class VAEBaseModel:
 				TCR_loss_train_total.append(TCR_loss.detach())
 				KLD_loss_train_total.append(KLD_loss.detach())
 
-				# some more metric
 
 			if e % validate_every == 0:
 				loss_train_total = torch.stack(loss_train_total).mean().item()
@@ -268,14 +276,14 @@ class VAEBaseModel:
 					TCR_loss_val_total = []
 					KLD_loss_val_total = []
 
-					for scRNA, tcr_seq, name, index, seq_len, metadata_batch in val_dataloader:
+					for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in val_dataloader:
 						scRNA = scRNA.to(device)
 						tcr_seq = tcr_seq.to(device)
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
 						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
-						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion)
+						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 						loss = loss + KLD_loss
 
 						loss_val_total.append(loss)
@@ -319,7 +327,7 @@ class VAEBaseModel:
 										  step=int(e*epoch2step), epoch=e)
 
 
-			if e % validate_every == 0:
+			if e % validate_every == 0 and save_last_model:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
 			if save_every is not None and e % save_every == 0:
@@ -328,6 +336,30 @@ class VAEBaseModel:
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
 				break
+
+	def encoder_only(self, scRNA, tcr_seq, tcr_len):
+		"""
+		Forward pass of autoencoder
+		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
+		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
+		:return: scRNA_pred, tcr_seq_pred
+		"""
+		h_scRNA = self.model.gene_encoder(scRNA)  # shape=[batch_size, hdim]
+		h_tcr_seq = self.model.seq_encoder(tcr_seq, tcr_len)  # shape=[batch_size, hdim]
+
+		joint_feature = torch.cat([h_scRNA, h_tcr_seq], dim=-1)
+		z_ = self.model.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
+		mu, logvar = z_[:, :z_.shape[1]//2], z_[:, z_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		z = self.model.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
+
+		return z, mu, logvar
+
+	def decoder_only(self, z, tcr_seq):
+		joint_dec_feature = self.model.shared_decoder(z)  # shape=[batch_size, hdim*2]
+		scRNA_pred = self.model.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
+		tcr_seq_pred = self.model.seq_decoder(joint_dec_feature, tcr_seq)
+
+		return scRNA_pred, tcr_seq_pred
 
 	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[], device=None):
 		"""
@@ -365,7 +397,7 @@ class VAEBaseModel:
 		with torch.no_grad():
 			self.model = self.model.to(device)
 			self.model.eval()
-			for scRNA, tcr_seq, name, index, seq_len, metadata_batch in pred_dataloader:
+			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in pred_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
 
@@ -517,91 +549,47 @@ class VAEBaseModel:
 
 		return train_dataset, val_dataset, train_masks
 
-	@property
-	def history(self):
-		return pd.DataFrame(self._val_history)
-
-	@property
-	def train_history(self):
-		return pd.DataFrame(self._train_history)
-
-	def save(self, filepath):
-		""" Save model and optimizer state, and auxiliary data for continuing training """
-		model_file = {'state_dict': self.model.state_dict(),
-					  'train_history': self._train_history,
-					  'val_history': self._val_history,
-					  'epoch': self.epoch,
-					  'aa_to_id': self.aa_to_id,
-					  'params': self.params,
-					  'best_loss': self.best_loss,
-					  'train_masks': self.train_masks}
-		try:
-			model_file['optimizer'] = self.optimizer.state_dict()
-		except:
-			pass
-		torch.save(model_file, filepath)
-
-	def load(self, filepath):
-		""" Load model and optimizer state, and auxiliary data for continuing training """
-		model_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
-		# TODO Backwards compatibility, previous (before 25.03.2021) version didn't had theta in model, can be deleted later, change back strict=True
-		missing_keys, unexpected_keys = self.model.load_state_dict(model_file['state_dict'], strict=False)
-		if not (('theta' in missing_keys and len(missing_keys) == 1) or (
-				len(missing_keys) == 0 and len(unexpected_keys) == 0)):
-			if len(unexpected_keys) > 0:
-				raise RuntimeError('Unexpected key(s) in state_dict: {}. '.format(
-					', '.join('"{}"'.format(k) for k in unexpected_keys)))
-			if len(missing_keys) > 0:
-				raise RuntimeError(
-					'Missing key(s) in state_dict: {}. '.format(', '.join('"{}"'.format(k) for k in missing_keys)))
-
-		self._train_history = model_file['train_history']
-		self._val_history = model_file['val_history']
-		self.epoch = model_file['epoch']
-		self.aa_to_id = model_file['aa_to_id']
-		self.best_loss = model_file['best_loss']
-		self.train_masks = model_file['train_masks']
-		try:
-			self.optimizer.load_state_dict(model_file['optimizer'])
-		except:
-			pass
-
-	# def save_data(self, filepath, train_masks):
-	# 	data = {#'raw_data': [self.adatas, self.names, self.gene_layers, self.seq_keys],
-	# 			'train_masks': train_masks}
-	# 	torch.save(data, filepath)
-
-	def load_data(self, filepath):
-		""" Only load training masks """
-		data_file = torch.load(os.path.join(filepath))  # , map_location=self.device)
-		# self.adatas, self.names, self.gene_layers, self.seq_keys = data_file['raw_data']
-		# it returns train masks
-		return data_file['train_masks']
-
-	def get_max_tcr_length(self):
+	def calculate_sampling_weights(self, adatas, train_masks, names, class_column, log_divisor=10):
 		"""
-		Determine the maximum amount of letters in the TCR sequence (TRA+TRB+codons)
-		:return: int value maximal sequence length
+		Calculate sampling weights for more balanced sampling in case of imbalanced classes,
+		:params class_column: str, key for class to be balanced
+		:params log_divisor: divide the label counts by this factor before taking the log, higher number makes the sampling more uniformly balanced
+		:return: list of weights
 		"""
-		max_length = -99
-		for adata in self.adatas:
-			tcr_data = adata.obs['TRA+TRB']
-			current_max = tcr_data.str.len().max()
-			max_length = max(current_max, max_length)
-		return max_length
+		label_counts = []
+		for adata, name in zip(adatas, names):
+			train_mask = train_masks[name]
+			label_count = adata[train_mask].obs[class_column].map(adata[train_mask].obs[class_column].value_counts())
+			label_counts.append(label_count)
 
+		label_counts = pd.concat(label_counts, ignore_index=True)
+		label_counts = np.log(label_counts / log_divisor + 1)
+		label_counts = 1 / label_counts
+
+		sampling_weights = label_counts / sum(label_counts)
+
+		return sampling_weights
+
+	@abstractmethod
 	def build_model(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
 		raise NotImplementedError()
 
-	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
+	@abstractmethod
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		raise NotImplementedError
 
-	def kl_annealing(self, e, kl_annealing_epochs):
-		"""
-		Calculate KLD annealing factor, i.e. KLD needs to get warmup
-		:param e: current epoch
-		:param kl_annealing_epochs: total number of warmup epochs
-		:return:
-		"""
-		return min(1.0, e / kl_annealing_epochs)
+	def calc_scRNA_rec_loss(self, scRNA_pred, scRNA, scRNA_criterion, size_factor=None, rec_loss_type='MSE'):
+		if rec_loss_type == 'MSE':
+			scRNA_loss_unweighted = scRNA_criterion(scRNA_pred, scRNA)
+		elif rec_loss_type == 'NB':
+			scRNA_pred = F.softmax(scRNA_pred, dim=-1)
+			size_factor_view = size_factor.unsqueeze(1).expand(-1, scRNA_pred.shape[1]).to(scRNA_pred.device)
+			dec_mean = scRNA_pred * size_factor_view
+			dispersion = self.model.theta.T
+			dispersion = torch.exp(dispersion)
+			scRNA_loss_unweighted = - scRNA_criterion(scRNA_pred, dec_mean, dispersion) * 1000  # TODO A Test, maybe delete afterwards
+		else:
+			raise NotImplementedError(f'{rec_loss_type} is not implemented')
+
+		return scRNA_loss_unweighted

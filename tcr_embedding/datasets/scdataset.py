@@ -11,7 +11,8 @@ class TCRDataset(torch.utils.data.Dataset):
 			adatas,
 			dataset_names,
 			index_list,
-			metadata
+			metadata,
+			labels=None
 	):
 		"""
 		:param scRNA_datas: list of gene expressions, where each element is a numpy or sparse matrix of one dataset
@@ -19,7 +20,8 @@ class TCRDataset(torch.utils.data.Dataset):
 		:param seq_len: list of non-padded sequence length, needed for many architectures to mask the padding out
 		:param adatas: list of raw adata
 		:param dataset_names: list of concatenated dataset names with len=sum of dataset-lengths
-		:param metadat: list of metadata
+		:param metadata: list of metadata
+		:param labels: list of labels
 		"""
 		self.adatas = adatas
 		self.dataset_names = dataset_names
@@ -32,9 +34,16 @@ class TCRDataset(torch.utils.data.Dataset):
 		for scRNA_data in scRNA_datas:
 			self.scRNA_datas.append(self._create_tensor(scRNA_data))
 		self.scRNA_datas = torch.cat(self.scRNA_datas, dim=0)
+		self.size_factors = self.scRNA_datas.sum(1)
 
 		self.seq_datas = np.concatenate(seq_datas)
 		self.seq_datas = torch.LongTensor(self.seq_datas)
+
+		if labels is not None:
+			self.labels = np.concatenate(labels)
+			self.labels = torch.LongTensor(self.labels)
+		else:
+			self.labels = None
 
 	def _create_tensor(self, x):
 		if sparse.issparse(x):
@@ -49,7 +58,10 @@ class TCRDataset(torch.utils.data.Dataset):
 	def __getitem__(self, idx):
 		# arbitrary additional info from adatas
 		# self.adatas[self.dataset_names[idx]].obs.loc[self.index_list[idx]][column]
-		return self.scRNA_datas[idx], self.seq_datas[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx]
+		if self.labels is None:
+			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx]
+		else:
+			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], self.labels[idx]
 
 
 class DeepTCRDataset(torch.utils.data.Dataset):

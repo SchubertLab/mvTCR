@@ -11,3 +11,5 @@ ray_results/
 *pyc
 scripts/
 *ipynb_checkpoints*
+tcr_embedding/models/__pycache__/
+/experiments/saved_models_delete/

@@ -116,19 +116,10 @@ class SingleModel(VAEBaseModel):
 		return SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 								seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
-	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		# Only scRNA model
 		if self.model.scRNA_model_arch != 'None' and self.model.seq_model_arch == 'None':
-			if self.losses[0] == 'MSE':
-				scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
-			elif self.losses[0] == 'NB':
-				dispersion = torch.exp(self.model.theta)
-				# decoder returns mean so mean = pred, be careful of the minus sign
-				# TODO Test NB code
-				scRNA_loss = - loss_weights[0] * scRNA_criterion(scRNA, scRNA_pred, dispersion)
-			else:
-				raise NotImplementedError(f'{self.losses[0]} is not implemented')
-
+			scRNA_loss = loss_weights[0] * self.calc_scRNA_rec_loss(scRNA_pred, scRNA, scRNA_criterion, size_factor, self.losses[0])
 			loss = scRNA_loss
 			TCR_loss = torch.FloatTensor([0])
 

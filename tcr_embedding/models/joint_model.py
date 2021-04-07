@@ -90,15 +90,8 @@ class JointModel(VAEBaseModel):
 		return JointModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 							   seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
-	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion):
-		if self.losses[0] == 'MSE':
-			scRNA_loss = loss_weights[0] * scRNA_criterion(scRNA_pred, scRNA)
-		elif self.losses[0] == 'NB':
-			dispersion = torch.exp(self.model.theta)
-			# decoder returns mean so mean = pred, be careful of the minus sign
-			scRNA_loss = - loss_weights[0] * scRNA_criterion(scRNA, scRNA_pred, dispersion)
-		else:
-			raise NotImplementedError(f'{self.losses[0]} is not implemented')
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
+		scRNA_loss = loss_weights[0] * self.calc_scRNA_rec_loss(scRNA_pred, scRNA, scRNA_criterion, size_factor, self.losses[0])
 
 		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 1:  # For GRU and Transformer, as they don't predict start token
 			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[:, 1:].flatten())

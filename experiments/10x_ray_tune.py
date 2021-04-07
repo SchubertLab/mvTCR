@@ -31,12 +31,17 @@ def correct_params(params):
 	"""
 	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
 	params['shared_hidden'] = [params['shared_hidden']]
+	if 'num_layers' in params:
+		params['shared_hidden'] = params['shared_hidden'] * params['num_layers']
 
 	if 'loss_scRNA' in params:
 		params['losses'][0] = params['loss_scRNA']
 
 	if 'gene_hidden' in params['scRNA_model_hyperparams']:
 		params['scRNA_model_hyperparams']['gene_hidden'] = [params['scRNA_model_hyperparams']['gene_hidden']]
+
+	if 'num_layers' in params['scRNA_model_hyperparams']:
+		params['scRNA_model_hyperparams']['gene_hidden'] = params['scRNA_model_hyperparams']['gene_hidden'] * params['scRNA_model_hyperparams']['num_layers']
 
 	if params['seq_model_arch'] == 'CNN':
 		params['seq_model_hyperparams']['num_features'] = [
@@ -102,6 +107,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
 	experiment.log_parameter('experiment_name', experiment_name)
 	experiment.log_parameter('save_path', save_path)
+	experiment.log_parameter('balanced_sampling', args.balanced_sampling)
+
 	if params['seq_model_arch'] == 'CNN':
 		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
@@ -145,6 +152,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	#         torch.save((net.state_dict(), optimizer.state_dict()), path)
 
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # to have same numbers of iteration
+	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
 	epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
 	save_every = n_epochs // args.num_checkpoints
@@ -160,10 +168,12 @@ def objective(params, checkpoint_dir=None, adata=None):
 		kl_annealing_epochs=None,
 		val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
 		metadata=['binding_name', 'binding_label'],
-		early_stop=args.early_stop,
+		early_stop=early_stop,
+		balanced_sampling=args.balanced_sampling,
 		validate_every=5,
 		save_every=save_every,
 		save_path=save_path,
+		save_last_model=False,
 		num_workers=0,
 		verbose=0,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
 		device=None,
@@ -263,7 +273,7 @@ parser.add_argument('--num_checkpoints', type=int, default=20)
 parser.add_argument('--local_mode', action='store_true', help='If flag is set, then local mode in ray is activated which enables breakpoints')
 parser.add_argument('--num_cpu', type=int, default=4)
 parser.add_argument('--num_gpu', type=int, default=1)
-
+parser.add_argument('--balanced_sampling', type=str, default=None)
 args = parser.parse_args()
 
 adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
