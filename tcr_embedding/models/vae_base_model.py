@@ -189,12 +189,12 @@ class VAEBaseModel(BaseModel, ABC):
 		elif losses[0] == 'NB':
 			scRNA_criterion = NB()
 		else:
-			raise ValueError(f'{losses[0]} loss in not implemented')
+			raise ValueError(f'{losses[0]} loss is not implemented')
 
 		if losses[1] == 'CE':
 			TCR_criterion = nn.CrossEntropyLoss(ignore_index=self.aa_to_id['_'])
 		else:
-			raise ValueError(f'{losses[1]} loss in not implemented')
+			raise ValueError(f'{losses[1]} loss is not implemented')
 
 		KL_criterion = KLD()
 
@@ -241,25 +241,12 @@ class VAEBaseModel(BaseModel, ABC):
 				TCR_loss_train_total.append(TCR_loss.detach())
 				KLD_loss_train_total.append(KLD_loss.detach())
 
-
 			if e % validate_every == 0:
 				loss_train_total = torch.stack(loss_train_total).mean().item()
 				scRNA_loss_train_total = torch.stack(scRNA_loss_train_total).mean().item()
 				TCR_loss_train_total = torch.stack(TCR_loss_train_total).mean().item()
 				KLD_loss_train_total = torch.stack(KLD_loss_train_total).mean().item()
 
-				self._train_history['epoch'].append(e)
-				self._train_history['loss'].append(loss_train_total)
-				self._train_history['scRNA_loss'].append(scRNA_loss_train_total)
-				self._train_history['TCR_loss'].append(TCR_loss_train_total)
-				self._train_history['KLD_loss'].append(KLD_loss_train_total)
-
-				if verbose >= 2:
-					print('\n')
-					print(f'Train Loss: {loss_train_total}')
-					print(f'Train scRNA Loss: {scRNA_loss_train_total}')
-					print(f'Train TCR Loss: {TCR_loss_train_total}')
-					print(f'Train KLD Loss: {KLD_loss_train_total}\n')
 				if comet is not None:
 					comet.log_metrics({'Train Loss': loss_train_total,
 									   'Train scRNA Loss': scRNA_loss_train_total,
@@ -298,18 +285,6 @@ class VAEBaseModel(BaseModel, ABC):
 					TCR_loss_val_total = torch.stack(TCR_loss_val_total).mean().item()
 					KLD_loss_val_total = torch.stack(KLD_loss_val_total).mean().item()
 
-					self._val_history['epoch'].append(e)
-					self._val_history['loss'].append(loss_val_total)
-					self._val_history['scRNA_loss'].append(scRNA_loss_val_total)
-					self._val_history['TCR_loss'].append(TCR_loss_val_total)
-					self._val_history['KLD_loss'].append(KLD_loss_val_total)
-					if verbose >= 1:
-						print('\n')
-						print(f'Val Loss: {loss_val_total}')
-						print(f'Val scRNA Loss: {scRNA_loss_val_total}')
-						print(f'Val TCR Loss: {TCR_loss_val_total}')
-						print(f'Val KLD Loss: {KLD_loss_val_total}')
-
 					if loss_val_total < self.best_loss:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
@@ -336,6 +311,10 @@ class VAEBaseModel(BaseModel, ABC):
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
 				break
+
+			if torch.isnan(loss):
+				print(f'Loss became NaN, Loss: {loss}')
+				return
 
 	def encoder_only(self, scRNA, tcr_seq, tcr_len):
 		"""
