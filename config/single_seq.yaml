@@ -9,6 +9,7 @@ seq_model_hyperparams:
   num_layers: 2
   dropout: 0.1
   bidirectional: True
+  teacher_forcing: 0
 
 scRNA_model_arch: None
 scRNA_model_hyperparams:
@@ -31,7 +32,7 @@ shared_hidden:
 zdim: 100
 
 # Loss and optimizer
-lr: 1.0e-3
+lr: 3.0e-4
 batch_size: 256
 losses:
   - MSE

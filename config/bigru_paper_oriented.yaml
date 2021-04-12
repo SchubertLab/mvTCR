@@ -9,6 +9,7 @@ seq_model_hyperparams:
   num_layers: 2
   dropout: 0.1
   bidirectional: True
+  teacher_forcing: 1.0
 
 scRNA_model_arch: MLP
 scRNA_model_hyperparams:
@@ -38,6 +39,6 @@ losses:
   - CE
 
 loss_weights:
-  - 0.1
+  - 10.0
   - 1.0
   - 0.00005
