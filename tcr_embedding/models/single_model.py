@@ -111,10 +111,11 @@ class SingleModel(VAEBaseModel):
 		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
 										  zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys)
 
-	def build_model(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
-		return SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-								seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
+		num_seq_labels = len(aa_to_id)
+
+		self.model = SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
+									  seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		# Only scRNA model

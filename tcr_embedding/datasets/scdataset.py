@@ -59,7 +59,7 @@ class TCRDataset(torch.utils.data.Dataset):
 		# arbitrary additional info from adatas
 		# self.adatas[self.dataset_names[idx]].obs.loc[self.index_list[idx]][column]
 		if self.labels is None:
-			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx]
+			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], False
 		else:
 			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], self.labels[idx]
 

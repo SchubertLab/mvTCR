@@ -29,8 +29,9 @@ def correct_params(params):
 	:param params: hyperparameter dict
 	:return: corrected hyperparameter dict
 	"""
-	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl']]
+	params['loss_weights'] = [params['loss_weights_scRNA'], params['loss_weights_seq'], params['loss_weights_kl'], params['loss_weights_cls']]
 	params['shared_hidden'] = [params['shared_hidden']]
+	params['classifier_params']['hidden'] = [params['classifier_params']['hidden']]
 	if 'num_layers' in params:
 		params['shared_hidden'] = params['shared_hidden'] * params['num_layers']
 
@@ -42,6 +43,9 @@ def correct_params(params):
 
 	if 'num_layers' in params['scRNA_model_hyperparams']:
 		params['scRNA_model_hyperparams']['gene_hidden'] = params['scRNA_model_hyperparams']['gene_hidden'] * params['scRNA_model_hyperparams']['num_layers']
+
+	if 'num_layers' in params['classifier_params']:
+		params['classifier_params']['hidden'] = params['classifier_params']['hidden'] * params['classifier_params']['num_layers']
 
 	if params['seq_model_arch'] == 'CNN':
 		params['seq_model_hyperparams']['num_features'] = [
@@ -114,13 +118,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
 
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
-
-	if 'single' in args.model:
-		init_model = tcr.models.single_model.SingleModel
-	else:
-		init_model = tcr.models.joint_model.JointModel
 	# Init Model
-	model = init_model(
+	model = tcr.models.supervised.SupervisedModel(
 		adatas=[adata],  # adatas containing gene expression and TCR-seq
 		aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
 		seq_model_arch=params['seq_model_arch'],  # seq model architecture
@@ -135,7 +134,10 @@ def objective(params, checkpoint_dir=None, adata=None):
 		shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
 		names=['10x'],
 		gene_layers=[],  # [] or list of str for layer keys of each dataset
-		seq_keys=[]  # [] or list of str for seq keys of each dataset
+		seq_keys=[],  # [] or list of str for seq keys of each dataset
+		classifier_params=params['classifier_params'],
+		label_key='high_count_binding_label'
+
 	)
 
 	#     # Code Snippet for later
@@ -177,9 +179,10 @@ def objective(params, checkpoint_dir=None, adata=None):
 		num_workers=0,
 		verbose=0,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
 		device=None,
-		comet=experiment
+		comet=experiment,
+		tune=tune
 	)
-	# Evaluate each checkpoint model
+	####################################### Evaluate each checkpointed model ###########################################
 	best_checkpoint = None
 	best_metric = -1
 	metrics_list = []
@@ -192,7 +195,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 			try:
 				summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
 			except:
-				tune.report(weighted_f1=0.0)
 				return
 
 			metrics = summary['knn']
@@ -212,7 +214,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	for checkpoint_fp in checkpoint_fps:
 		os.remove(os.path.join(save_path, checkpoint_fp))
 
-
+	####################################### Best Reconstruction model ##################################################
 	print('kNN for best reconstruction loss model')
 	# Evaluate Model (best model based on reconstruction loss)
 	model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
@@ -220,7 +222,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 	try:
 		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
 	except:
-		tune.report(weighted_f1=0.0)
 		return
 
 	metrics = summary['knn']
@@ -230,7 +231,25 @@ def objective(params, checkpoint_dir=None, adata=None):
 			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
 		else:
 			experiment.log_metric('best_recon_accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
-	
+
+	####################################### Best Classification model ##################################################
+	print('kNN for best classification model')
+	# Evaluate Model (best model based on reconstruction loss)
+	model.load(os.path.join(save_path, f'{name}_best_cls_model.pt'))
+	test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
+	try:
+		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
+	except:
+		return
+
+	metrics = summary['knn']
+	metrics_list.append(metrics['weighted avg']['f1-score'])
+	for antigen, metric in metrics.items():
+		if antigen != 'accuracy':
+			experiment.log_metrics(metric, prefix='best_cls_' + antigen, step=int(model.epoch * epoch2step), epoch=model.epoch)
+		else:
+			experiment.log_metric('best_cls_accuracy', metric, step=int(model.epoch * epoch2step), epoch=model.epoch)
+
 	# For visualization purpose, we set all rare specificities to no_data
 	adata.obs['binding_label'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = -1
 	adata.obs['binding_name'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = 'no_data'
@@ -253,14 +272,15 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_figure(figure_name=name + '_val_best_recon_clonotype', figure=fig_clonotype, step=model.epoch)
 	experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
+	print('UMAP for best classification loss model')
+	model.load(os.path.join(save_path, f'{name}_best_cls_model.pt'))
+	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
+	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name + '_val_best_recon')
+	experiment.log_figure(figure_name=name + '_val_best_cls_donor', figure=fig_donor, step=model.epoch)
+	experiment.log_figure(figure_name=name + '_val_best_cls_clonotype', figure=fig_clonotype, step=model.epoch)
+	experiment.log_figure(figure_name=name + '_val_best_cls_antigen', figure=fig_antigen, step=model.epoch)
+
 	experiment.end()
-
-	# Report Metric back to Tune
-	for metric in metrics_list:
-		print(f'Weighted F1: {metric}')
-		tune.report(weighted_f1=metric)
-		time.sleep(0.5)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
@@ -274,24 +294,18 @@ parser.add_argument('--local_mode', action='store_true', help='If flag is set, t
 parser.add_argument('--num_cpu', type=int, default=4)
 parser.add_argument('--num_gpu', type=int, default=1)
 parser.add_argument('--balanced_sampling', type=str, default=None)
-parser.add_argument('--grid_search', action='store_true')
 args = parser.parse_args()
 
-adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
+adata = sc.read_h5ad('../data/10x_CD8TC/v6_supervised.h5ad')
 
 params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
 name = f'10x_tune_{args.model}{args.suffix}'
-local_dir = '~/tcr-embedding/ray_results'
+local_dir = '~/tcr_embedding_new/ray_results'
 ray.init(local_mode=args.local_mode)
-
-if args.grid_search:
-	algo = None
-else:
-	algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params)
-	algo = ConcurrencyLimiter(algo, max_concurrent=2)
-
+algo = OptunaSearch(metric='weighted_f1', mode='max', points_to_evaluate=init_params)
+algo = ConcurrencyLimiter(algo, max_concurrent=2)
 analysis = tune.run(
 	tune.with_parameters(objective, adata=adata),
 	name=name,

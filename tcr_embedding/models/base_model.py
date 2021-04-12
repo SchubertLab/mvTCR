@@ -21,7 +21,8 @@ class BaseModel:
 					  'aa_to_id': self.aa_to_id,
 					  'params': self.params,
 					  'best_loss': self.best_loss,
-					  'train_masks': self.train_masks}
+					  'train_masks': self.train_masks,
+					  'best_cls_metric': self.best_cls_metric}
 		try:
 			model_file['optimizer'] = self.optimizer.state_dict()
 		except:
@@ -48,6 +49,8 @@ class BaseModel:
 		self.aa_to_id = model_file['aa_to_id']
 		self.best_loss = model_file['best_loss']
 		self.train_masks = model_file['train_masks']
+		if 'best_cls_metric' in model_file.keys():  # backward compatibility
+			self.best_cls_metric = model_file['best_cls_metric']
 		try:
 			self.optimizer.load_state_dict(model_file['optimizer'])
 		except:
