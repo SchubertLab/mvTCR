@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore')  # "error", "ignore", "always", "default", "module" or "once"
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,13 +12,13 @@ from collections import defaultdict
 import pandas as pd
 import scanpy as sc
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import classification_report
 from abc import ABC, abstractmethod
 
 from tcr_embedding.datasets.scdataset import TCRDataset
 from .losses.nb import NB
 from .losses.kld import KLD
 from .base_model import BaseModel
-
 
 class VAEBaseModel(BaseModel, ABC):
 	def __init__(self,
@@ -86,11 +89,11 @@ class VAEBaseModel(BaseModel, ABC):
 		else:
 			self.gene_layers = gene_layers
 
-		# assuming now gene expressions between datasets are using the same genes, so input vectors have same length and order, e.g. using inner or outer join
-		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
-		num_seq_labels = len(aa_to_id)
-		self.model = self.build_model(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-									  seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+		self.model_type = 'unsupervised'
+
+		# supervised specific attributes
+		self.label_key = None  # used for supervised and semi-supervised model
+		self.label_to_specificity = None
 
 	def train(self,
 			  experiment_name='example',
@@ -114,7 +117,8 @@ class VAEBaseModel(BaseModel, ABC):
 			  verbose=1,
 			  continue_training=False,
 			  device=None,
-			  comet=None
+			  comet=None,
+			  tune=None
 			  ):
 		"""
 		Train the model for n_epochs
@@ -148,9 +152,9 @@ class VAEBaseModel(BaseModel, ABC):
 		# Initialize dataloader
 		if continue_training:
 			self.train_masks = self.load_data(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
-			train_datasets, val_datasets, _ = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, self.train_masks)
+			train_datasets, val_datasets, _ = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, self.train_masks, self.label_key)
 		else:
-			train_datasets, val_datasets, self.train_masks = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata)
+			train_datasets, val_datasets, self.train_masks = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, label_key=self.label_key)
 
 		if balanced_sampling is None:
 			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -158,6 +162,9 @@ class VAEBaseModel(BaseModel, ABC):
 			sampling_weights = self.calculate_sampling_weights(self.adatas, self.train_masks, self.names, class_column=balanced_sampling,log_divisor=log_divisor)
 			sampler = WeightedRandomSampler(weights=sampling_weights, num_samples=len(sampling_weights), replacement=True)
 			# shuffle is mutually exclusive to sampler, but sampler is anyway shuffled
+			if comet is not None:
+				comet.log_parameters({'sampling_weight_min': sampling_weights.min(),
+									  'sampling_weight_max': sampling_weights.max()})
 			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=sampler)
 		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 		print('Dataloader created')
@@ -178,10 +185,10 @@ class VAEBaseModel(BaseModel, ABC):
 
 		if len(loss_weights) == 0:
 			loss_weights = [1.0] * 3
-		elif len(loss_weights) == 3:
+		elif len(loss_weights) == 3 or len(loss_weights) == 4:
 			loss_weights = loss_weights
 		else:
-			raise ValueError(f'length of loss_weights must be 3 or [].')
+			raise ValueError(f'length of loss_weights must be 3, 4 or [].')
 
 		self.losses = losses
 		if losses[0] == 'MSE':
@@ -197,6 +204,7 @@ class VAEBaseModel(BaseModel, ABC):
 			raise ValueError(f'{losses[1]} loss is not implemented')
 
 		KL_criterion = KLD()
+		CLS_criterion = nn.CrossEntropyLoss()
 
 		self.model = self.model.to(device)
 		self.model.train()
@@ -204,6 +212,7 @@ class VAEBaseModel(BaseModel, ABC):
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
 
 		self.best_loss = 99999999999
+		self.best_cls_metric = -1
 		no_improvements = 0
 		self.epoch = 0
 		epoch2step = 256 / batch_size  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -222,7 +231,10 @@ class VAEBaseModel(BaseModel, ABC):
 			scRNA_loss_train_total = []
 			TCR_loss_train_total = []
 			KLD_loss_train_total = []
-			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in train_dataloader:
+			cls_loss_train_total = []
+			labels_gt_list = []
+			labels_pred_list = []
+			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
 
@@ -231,6 +243,15 @@ class VAEBaseModel(BaseModel, ABC):
 				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
 				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 				loss = loss + KLD_loss
+				if self.model_type == 'supervised':
+					labels_pred = self.model.classify(z)
+					labels = labels.to(device)
+					cls_loss = loss_weights[3] * CLS_criterion(labels_pred, labels)
+					loss += cls_loss
+					labels_gt_list.append(labels)
+					labels_pred_list.append(labels_pred.argmax(dim=-1))
+				else:
+					cls_loss = torch.FloatTensor([0])
 
 				self.optimizer.zero_grad()
 				loss.backward()
@@ -240,19 +261,35 @@ class VAEBaseModel(BaseModel, ABC):
 				scRNA_loss_train_total.append(scRNA_loss.detach())
 				TCR_loss_train_total.append(TCR_loss.detach())
 				KLD_loss_train_total.append(KLD_loss.detach())
+				cls_loss_train_total.append(cls_loss)
 
 			if e % validate_every == 0:
 				loss_train_total = torch.stack(loss_train_total).mean().item()
 				scRNA_loss_train_total = torch.stack(scRNA_loss_train_total).mean().item()
 				TCR_loss_train_total = torch.stack(TCR_loss_train_total).mean().item()
 				KLD_loss_train_total = torch.stack(KLD_loss_train_total).mean().item()
+				cls_loss_train_total = torch.stack(cls_loss_train_total).mean().item()
 
 				if comet is not None:
 					comet.log_metrics({'Train Loss': loss_train_total,
 									   'Train scRNA Loss': scRNA_loss_train_total,
 									   'Train TCR Loss': TCR_loss_train_total,
-									   'Train KLD Loss': KLD_loss_train_total},
+									   'Train KLD Loss': KLD_loss_train_total,
+									   'Train CLS Loss': cls_loss_train_total},
 									  step=int(e*epoch2step), epoch=e)
+
+				if self.model_type == 'supervised':# and comet is not None:
+					labels_gt_list = torch.cat(labels_gt_list).cpu().numpy()
+					labels_gt_list = [self.label_to_specificity[x] for x in labels_gt_list]
+					labels_pred_list = torch.cat(labels_pred_list).cpu().numpy()
+					labels_pred_list = [self.label_to_specificity[x] for x in labels_pred_list]
+
+					metrics = classification_report(labels_gt_list, labels_pred_list, output_dict=True)
+					for antigen, metric in metrics.items():
+						if antigen != 'accuracy':
+							comet.log_metrics(metric, prefix=f'Train supervised {antigen}', step=int(e * epoch2step), epoch=e)
+						else:
+							comet.log_metric('Train supervised accuracy', metric, step=int(e * epoch2step), epoch=e)
 
 			# VALIDATION LOOP
 			if e % validate_every == 0:
@@ -262,8 +299,11 @@ class VAEBaseModel(BaseModel, ABC):
 					scRNA_loss_val_total = []
 					TCR_loss_val_total = []
 					KLD_loss_val_total = []
+					cls_loss_val_total = []
+					labels_gt_list = []
+					labels_pred_list = []
 
-					for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in val_dataloader:
+					for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels in val_dataloader:
 						scRNA = scRNA.to(device)
 						tcr_seq = tcr_seq.to(device)
 
@@ -272,11 +312,21 @@ class VAEBaseModel(BaseModel, ABC):
 						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
 						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 						loss = loss + KLD_loss
+						if self.model_type == 'supervised':
+							labels_pred = self.model.classify(z)
+							labels = labels.to(device)
+							cls_loss = loss_weights[3] * CLS_criterion(labels_pred, labels)
+							loss += cls_loss
+							labels_gt_list.append(labels)
+							labels_pred_list.append(labels_pred.argmax(dim=-1))
+						else:
+							cls_loss = torch.FloatTensor([0])
 
 						loss_val_total.append(loss)
 						scRNA_loss_val_total.append(scRNA_loss)
 						TCR_loss_val_total.append(TCR_loss)
 						KLD_loss_val_total.append(KLD_loss)
+						cls_loss_val_total.append(cls_loss)
 
 					self.model.train()
 
@@ -284,20 +334,43 @@ class VAEBaseModel(BaseModel, ABC):
 					scRNA_loss_val_total = torch.stack(scRNA_loss_val_total).mean().item()
 					TCR_loss_val_total = torch.stack(TCR_loss_val_total).mean().item()
 					KLD_loss_val_total = torch.stack(KLD_loss_val_total).mean().item()
+					cls_loss_val_total = torch.stack(cls_loss_val_total).mean().item()
 
 					if loss_val_total < self.best_loss:
 						self.best_loss = loss_val_total
-						self.save(os.path.join(save_path, f'{experiment_name}_best_model.pt'))
+						self.save(os.path.join(save_path, f'{experiment_name}_best_rec_model.pt'))
 						no_improvements = 0
 					# KL warmup periods is grace period
 					elif e > kl_annealing_epochs:
 						no_improvements += validate_every
+
+					if self.model_type == 'supervised' and comet is not None:
+						labels_gt_list = torch.cat(labels_gt_list).cpu().numpy()
+						labels_gt_list = [self.label_to_specificity[x] for x in labels_gt_list]
+						labels_pred_list = torch.cat(labels_pred_list).cpu().numpy()
+						labels_pred_list = [self.label_to_specificity[x] for x in labels_pred_list]
+
+						metrics = classification_report(labels_gt_list, labels_pred_list, output_dict=True)
+						for antigen, metric in metrics.items():
+							if antigen != 'accuracy':
+								comet.log_metrics(metric, prefix=f'Val supervised {antigen}',
+												  step=int(e * epoch2step), epoch=e)
+							else:
+								comet.log_metric('Val supervised accuracy', metric, step=int(e * epoch2step), epoch=e)
+
+						if metrics['weighted avg']['f1-score'] > self.best_cls_metric:
+							self.best_cls_metric = metrics['weighted avg']['f1-score']
+							self.save(os.path.join(save_path, f'{experiment_name}_best_cls_model.pt'))
+
+						if tune is not None:
+							tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
 
 					if comet is not None:
 						comet.log_metrics({'Val Loss': loss_val_total,
 										   'Val scRNA Loss': scRNA_loss_val_total,
 										   'Val TCR Loss': TCR_loss_val_total,
 										   'Val KLD Loss': KLD_loss_val_total,
+										   'Val CLS Loss': cls_loss_val_total,
 										   'Epochs without Improvements': no_improvements},
 										  step=int(e*epoch2step), epoch=e)
 
@@ -376,7 +449,7 @@ class VAEBaseModel(BaseModel, ABC):
 		with torch.no_grad():
 			self.model = self.model.to(device)
 			self.model.eval()
-			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch in pred_dataloader:
+			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels in pred_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
 
@@ -448,7 +521,7 @@ class VAEBaseModel(BaseModel, ABC):
 
 		return z_val
 
-	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None):
+	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None, label_key=None):
 		"""
 		Create torch Dataset, see above for the input
 		:param adatas: list of adatas
@@ -548,11 +621,6 @@ class VAEBaseModel(BaseModel, ABC):
 		sampling_weights = label_counts / sum(label_counts)
 
 		return sampling_weights
-
-	@abstractmethod
-	def build_model(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-					seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
-		raise NotImplementedError()
 
 	@abstractmethod
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
