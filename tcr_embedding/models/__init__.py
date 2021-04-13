@@ -3,3 +3,4 @@ from . import single_model
 from . import deep_tcr
 #from . import semi_supervised
 from . import supervised
+from . import mmvae

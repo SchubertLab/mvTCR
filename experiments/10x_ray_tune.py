@@ -117,6 +117,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 	if 'single' in args.model:
 		init_model = tcr.models.single_model.SingleModel
+	elif 'mmvae' in args.model:
+		init_model = tcr.models.mmvae.MMVAE
 	else:
 		init_model = tcr.models.joint_model.JointModel
 	# Init Model

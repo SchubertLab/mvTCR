@@ -94,6 +94,7 @@ class VAEBaseModel(BaseModel, ABC):
 		# supervised specific attributes
 		self.label_key = None  # used for supervised and semi-supervised model
 		self.label_to_specificity = None
+		self.mmvae = False
 
 	def train(self,
 			  experiment_name='example',
@@ -240,7 +241,14 @@ class VAEBaseModel(BaseModel, ABC):
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-				KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+				if self.mmvae:
+					KLD_loss = 0.5 * loss_weights[2] * \
+							   (KL_criterion(mu[0], logvar[1]) + KL_criterion(mu[0], logvar[1])) * \
+							   self.kl_annealing(e, kl_annealing_epochs)
+					z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
+				else:
+					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+
 				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 				loss = loss + KLD_loss
 				if self.model_type == 'supervised':
@@ -309,7 +317,13 @@ class VAEBaseModel(BaseModel, ABC):
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-						KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+						if self.mmvae:
+							KLD_loss = 0.5 * loss_weights[2] * \
+									   (KL_criterion(mu[0], logvar[1]) + KL_criterion(mu[0], logvar[1])) * \
+									   self.kl_annealing(e, kl_annealing_epochs)
+							z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
+						else:
+							KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
 						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 						loss = loss + KLD_loss
 						if self.model_type == 'supervised':
@@ -454,6 +468,8 @@ class VAEBaseModel(BaseModel, ABC):
 				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
+				if self.mmvae:
+					z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
 				z = sc.AnnData(z.detach().cpu().numpy())
 				z.obs['barcode'] = index
 				z.obs['dataset'] = name
