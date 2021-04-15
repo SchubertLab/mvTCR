@@ -115,10 +115,12 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
-	if 'single' in args.model:
+	if 'single' in args.model and 'separate' not in args.model:
 		init_model = tcr.models.single_model.SingleModel
 	elif 'mmvae' in args.model:
 		init_model = tcr.models.mmvae.MMVAE
+	elif 'separate' in args.model:
+		init_model = tcr.models.separate_model.SeparateModel
 	else:
 		init_model = tcr.models.joint_model.JointModel
 	# Init Model
@@ -279,7 +281,7 @@ parser.add_argument('--balanced_sampling', type=str, default=None)
 parser.add_argument('--grid_search', action='store_true')
 args = parser.parse_args()
 
-adata = sc.read_h5ad('../data/10x_CD8TC/v5_train_val_test.h5ad')
+adata = sc.read_h5ad('../data/10x_CD8TC/v6_supervised.h5ad')
 
 params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params

@@ -15,3 +15,4 @@ tcr_embedding/models/__pycache__/
 /experiments/saved_models_delete/
 config/
 config_tune/
+*.pdf

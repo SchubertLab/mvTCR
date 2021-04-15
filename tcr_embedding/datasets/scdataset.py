@@ -26,8 +26,8 @@ class TCRDataset(torch.utils.data.Dataset):
 		self.adatas = adatas
 		self.dataset_names = dataset_names
 		self.index_list = index_list
-		self.seq_len = seq_len
 		self.metadata = np.concatenate(metadata, axis=0).tolist()
+		self.seq_len = torch.LongTensor(seq_len)
 
 		# Concatenate datasets to be able to shuffle data through
 		self.scRNA_datas = []
