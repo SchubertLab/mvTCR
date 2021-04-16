@@ -91,6 +91,14 @@ def objective(params, checkpoint_dir=None, adata=None):
 	from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 	from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 
+	random_seed = 42
+	import torch
+	import numpy as np
+	import random
+	torch.manual_seed(random_seed)
+	np.random.seed(random_seed)
+	random.seed(random_seed)
+
 	# Optuna cannot sample within lists, so we have to add those values back into a list
 	params = correct_params(params)
 
@@ -210,8 +218,11 @@ def objective(params, checkpoint_dir=None, adata=None):
 			if metrics['weighted avg']['f1-score'] > best_metric:
 				best_metric = metrics['weighted avg']['f1-score']
 				best_checkpoint = checkpoint_fp
+				print(f'Best new Checkpoint: {best_checkpoint}')
+				print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
 
 	# Delete checkpoint files except best checkpoint
+	print(f'\n\nBest Overall Checkpoint: {best_checkpoint}')
 	checkpoint_fps.remove(best_checkpoint)
 	for checkpoint_fp in checkpoint_fps:
 		os.remove(os.path.join(save_path, checkpoint_fp))
@@ -287,7 +298,8 @@ params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
 name = f'10x_tune_{args.model}{args.suffix}'
-local_dir = '~/tcr-embedding/ray_results'
+cwd = os.getcwd()
+local_dir = f'{cwd}/../ray_results'
 ray.init(local_mode=args.local_mode)
 
 if args.grid_search:

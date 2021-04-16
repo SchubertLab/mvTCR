@@ -1,7 +1,8 @@
 import torch
 import os
 import pandas as pd
-
+import numpy as np
+import random
 
 class BaseModel:
 	@property
@@ -88,3 +89,8 @@ class BaseModel:
 		:return:
 		"""
 		return min(1.0, e / kl_annealing_epochs)
+
+	def seed_worker(worker_id):
+		worker_seed = torch.initial_seed() % 2 ** 32
+		np.random.seed(worker_seed)
+		random.seed(worker_seed)

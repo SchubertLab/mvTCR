@@ -166,7 +166,7 @@ class VAEBaseModel(BaseModel, ABC):
 			if comet is not None:
 				comet.log_parameters({'sampling_weight_min': sampling_weights.min(),
 									  'sampling_weight_max': sampling_weights.max()})
-			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=sampler)
+			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=sampler, worker_init_fn=self.seed_worker)
 		val_dataloader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 		print('Dataloader created')
 
@@ -393,6 +393,9 @@ class VAEBaseModel(BaseModel, ABC):
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
 			if save_every is not None and e % save_every == 0:
+				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
+
+			if e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0:
 				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
 
 			if early_stop is not None and no_improvements > early_stop:
