@@ -94,7 +94,8 @@ class VAEBaseModel(BaseModel, ABC):
 		# supervised specific attributes
 		self.label_key = None  # used for supervised and semi-supervised model
 		self.label_to_specificity = None
-		self.mmvae = False
+		self.moe = False
+		self.poe = False
 
 	def train(self,
 			  experiment_name='example',
@@ -241,11 +242,15 @@ class VAEBaseModel(BaseModel, ABC):
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-				if self.mmvae:
+				if self.moe:
 					KLD_loss = 0.5 * loss_weights[2] * \
-							   (KL_criterion(mu[0], logvar[1]) + KL_criterion(mu[0], logvar[1])) * \
+							   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1])) * \
 							   self.kl_annealing(e, kl_annealing_epochs)
-					z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
+					z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
+				elif self.poe:
+					KLD_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
+							   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1]) + KL_criterion(mu[2], logvar[2]))
+					z = z[2]  # use joint latent variable for further downstream tasks
 				else:
 					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
 
@@ -317,13 +322,18 @@ class VAEBaseModel(BaseModel, ABC):
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
 
-						if self.mmvae:
+						if self.moe:
 							KLD_loss = 0.5 * loss_weights[2] * \
-									   (KL_criterion(mu[0], logvar[1]) + KL_criterion(mu[0], logvar[1])) * \
+									   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1])) * \
 									   self.kl_annealing(e, kl_annealing_epochs)
-							z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
+							z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
+						elif self.poe:
+							KLD_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
+									   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1]) + KL_criterion(mu[2], logvar[2]))
+							z = z[2]  # use joint latent variable
 						else:
 							KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+
 						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 						loss = loss + KLD_loss
 						if self.model_type == 'supervised':
@@ -387,7 +397,6 @@ class VAEBaseModel(BaseModel, ABC):
 										   'Val CLS Loss': cls_loss_val_total,
 										   'Epochs without Improvements': no_improvements},
 										  step=int(e*epoch2step), epoch=e)
-
 
 			if e % validate_every == 0 and save_last_model:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
@@ -471,8 +480,10 @@ class VAEBaseModel(BaseModel, ABC):
 				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
-				if self.mmvae:
-					z = 0.5 * (z[0] + z[1])  # mean of latent space from both modalities for mmvae
+				if self.moe:
+					z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
+				elif self.poe:
+					z = z[2]  # use joint latent variable
 				z = sc.AnnData(z.detach().cpu().numpy())
 				z.obs['barcode'] = index
 				z.obs['dataset'] = name

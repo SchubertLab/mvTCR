@@ -122,11 +122,16 @@ def objective(params, checkpoint_dir=None, adata=None):
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
 
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
+	if args.donor != 'all':
+		adata = adata[adata.obs['donor'] == 'donor_'+args.donor]
+	experiment.log_parameter('donors', adata.obs['donor'].unique().astype(str))
 
 	if 'single' in args.model and 'separate' not in args.model:
 		init_model = tcr.models.single_model.SingleModel
-	elif 'mmvae' in args.model:
-		init_model = tcr.models.mmvae.MMVAE
+	elif 'moe' in args.model:
+		init_model = tcr.models.moe.MoEModel
+	elif 'poe' in args.model:
+		init_model = tcr.models.poe.PoEModel
 	elif 'separate' in args.model:
 		init_model = tcr.models.separate_model.SeparateModel
 	else:
@@ -290,6 +295,7 @@ parser.add_argument('--num_cpu', type=int, default=4)
 parser.add_argument('--num_gpu', type=int, default=1)
 parser.add_argument('--balanced_sampling', type=str, default=None)
 parser.add_argument('--grid_search', action='store_true')
+parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2', '3', '4'])
 args = parser.parse_args()
 
 adata = sc.read_h5ad('../data/10x_CD8TC/v6_supervised.h5ad')

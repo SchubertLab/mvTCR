@@ -5,3 +5,5 @@ from . import deep_tcr
 from . import supervised
 from . import mmvae
 from . import separate_model
+from . import poe
+from . import moe

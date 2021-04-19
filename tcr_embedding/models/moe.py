@@ -1,3 +1,4 @@
+# A Variational Information Bottleneck Approach to Multi-Omics Data Integration
 import torch
 import torch.nn as nn
 import numpy as np
@@ -11,78 +12,89 @@ from .vae_base_model import VAEBaseModel
 from tcr_embedding.datasets.scdataset import TCRDataset
 
 
-def none_model(hyperparams, hdim, xdim):
-	pass
-
-
-class SeparateModelTorch(nn.Module):
+class MoEModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
-		super(SeparateModelTorch, self).__init__()
+		super(MoEModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
 					  'Transformer': [TransformerEncoder, TransformerDecoder],
 					  'BiGRU': [BiGRUEncoder, BiGRUDecoder]}
 
-		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder],
-						'None': [none_model, none_model]}
+		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder]}
 
-		self.scRNA_model_arch = scRNA_model_arch
-		self.seq_model_arch = seq_model_arch
-		num_modalities = 1 if scRNA_model_arch == 'None' else 2
-
-		self.alpha_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim//2, num_seq_labels)  # h//2 to not make tcr in total dominate scRNA
-		self.alpha_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*num_modalities, num_seq_labels)
+		self.alpha_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim//2, num_seq_labels)  # h//2 to avoid combined tcr dominate scRNA
+		self.alpha_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim, num_seq_labels)
 
 		self.beta_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim//2, num_seq_labels)
-		self.beta_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*num_modalities, num_seq_labels)
+		self.beta_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim, num_seq_labels)
 
-		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
-		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim*num_modalities)
+		self.rna_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
+		self.rna_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim)
 
-		self.shared_encoder = MLP(hdim*num_modalities, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.shared_decoder = MLP(zdim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		self.tcr_vae_encoder = MLP(hdim, zdim * 2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.tcr_vae_decoder = MLP(zdim, hdim, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+
+		self.rna_vae_encoder = MLP(hdim, zdim * 2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.rna_vae_decoder = MLP(zdim, hdim, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-	def forward(self, scRNA, tcr_seq, tcr_len):
+	def forward(self, rna, tcr, tcr_len):
 		"""
 		Forward pass of autoencoder
-		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
-		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
-		:return: scRNA_pred, tcr_seq_pred
+		:param rna: torch.Tensor shape=[batch_size, num_genes]
+		:param tcr: torch.Tensor shape=[batch_size, seq_len, feature_dim]
+		:param tcr_len: torch.Tensor shape=[batch_size]
+		:return:
+			z: list of sampled latent variable zs. z = [z_rna, z_tcr, z_joint]
+			mu: list of predicted means mu. mu = [mu_rna, mu_tcr, mu_joint]
+			logvar: list of predicted logvars. logvar = [logvar_rna, logvar_tcr, logvar_joint]
+			rna_pred: list of reconstructed rna. rna_pred = [rna_pred using z_rna, rna_pred using z_joint]
+			tcr_pred: list of reconstructed tcr. tcr_pred = [tcr_pred using z_tcr, tcr_pred using z_joint]
 		"""
-		alpha_seq = tcr_seq[:, :tcr_seq.shape[1]//2]
+
+		# Encode TCR
+		alpha_seq = tcr[:, :tcr.shape[1] // 2]
 		alpha_len = tcr_len[:, 0]
 
-		beta_seq = tcr_seq[:, tcr_seq.shape[1]//2:]
+		beta_seq = tcr[:, tcr.shape[1] // 2:]
 		beta_len = tcr_len[:, 1]
 
 		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
 		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
+		h_tcr = torch.cat([h_alpha, h_beta], dim=-1)  # shape=[batch_size, hdim]
 
-		if self.scRNA_model_arch == 'None':  # Can't use NoneType, as NoneType can't be a key for dict
-			joint_feature = torch.cat([h_alpha, h_beta], dim=-1)
-		else:
-			h_scRNA = self.gene_encoder(scRNA)  # shape=[batch_size, hdim]
-			joint_feature = torch.cat([h_scRNA, h_alpha, h_beta], dim=-1)
-		z_ = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
-		mu, logvar = z_[:, :z_.shape[1]//2], z_[:, z_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
-		z = self.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
+		# Encode RNA
+		h_rna = self.rna_encoder(rna)  # shape=[batch_size, hdim]
 
-		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim*2]
+		# Predict Latent space
+		z_rna_ = self.rna_vae_encoder(h_rna)  # shape=[batch_size, zdim*2]
+		mu_rna, logvar_rna = z_rna_[:, :z_rna_.shape[1]//2], z_rna_[:, z_rna_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		z_rna = self.reparameterize(mu_rna, logvar_rna)  # shape=[batch_size, zdim]
 
-		if self.scRNA_model_arch == 'None':
-			scRNA_pred = None
-		else:
-			scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
+		z_tcr_ = self.tcr_vae_encoder(h_tcr)  # shape=[batch_size, zdim*2]
+		mu_tcr, logvar_tcr = z_tcr_[:, :z_tcr_.shape[1]//2], z_tcr_[:, z_tcr_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		z_tcr = self.reparameterize(mu_tcr, logvar_tcr)  # shape=[batch_size, zdim]
 
-		alpha_seq_pred = self.alpha_decoder(joint_dec_feature, alpha_seq)
-		beta_seq_pred = self.beta_decoder(joint_dec_feature, beta_seq)
+		z = [z_rna, z_tcr]
+		mu = [mu_rna, mu_tcr]
+		logvar = [logvar_rna, logvar_tcr]
 
-		tcr_seq_pred = torch.cat([alpha_seq_pred, beta_seq_pred], dim=1)  # cat along sequence dim
+		# Reconstruction
+		rna_pred = []
+		for z_ in z:
+			f_rna = self.rna_vae_decoder(z_)
+			rna_pred.append(self.rna_decoder(f_rna))
+		tcr_pred = []
+		for z_ in z:
+			f_tcr = self.tcr_vae_decoder(z_)
+			alpha_pred = self.alpha_decoder(f_tcr, alpha_seq)
+			beta_pred = self.beta_decoder(f_tcr, beta_seq)
 
-		return z, mu, logvar, scRNA_pred, tcr_seq_pred
+			tcr_pred.append(torch.cat([alpha_pred, beta_pred], dim=1))
+
+		return z, mu, logvar, rna_pred, tcr_pred
 
 	def reparameterize(self, mu, log_var):
 		"""
@@ -96,7 +108,7 @@ class SeparateModelTorch(nn.Module):
 		return z
 
 
-class SeparateModel(VAEBaseModel):
+class MoEModel(VAEBaseModel):
 	def __init__(self,
 				 adatas,  # adatas containing gene expression and TCR-seq
 				 aa_to_id,
@@ -114,31 +126,34 @@ class SeparateModel(VAEBaseModel):
 				 gene_layers=[],
 				 seq_keys=[]
 				 ):
-		super(SeparateModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys)
+		super(MoEModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
+									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys)
 
+		self.moe = True
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
-
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
-		self.model = SeparateModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-										seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+		self.model = MoEModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
+								   seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
+		''' Evaluate cross-modality reconstruction '''
+		scRNA_loss = 0.5 * loss_weights[0] * \
+					 (self.calc_scRNA_rec_loss(scRNA_pred[0], scRNA, scRNA_criterion, size_factor, self.losses[0]) +
+					  self.calc_scRNA_rec_loss(scRNA_pred[1], scRNA, scRNA_criterion, size_factor, self.losses[0]))
 
-		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
+		if tcr_seq_pred[0].shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
 			mask = torch.ones_like(tcr_seq).bool()
-			mask[:, [0, mask.shape[1] // 2]] = False
-			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq[mask].flatten())
+			mask[:, [0, mask.shape[1]//2]] = False
+			TCR_loss = 0.5 * loss_weights[1] * \
+					   (TCR_criterion(tcr_seq_pred[0].flatten(end_dim=1), tcr_seq[mask].flatten()) +
+						TCR_criterion(tcr_seq_pred[1].flatten(end_dim=1), tcr_seq[mask].flatten()))
 		else:  # For CNN, as it predicts start token
-			TCR_loss = loss_weights[1] * TCR_criterion(tcr_seq_pred.flatten(end_dim=1), tcr_seq.flatten())
-		loss = TCR_loss
+			TCR_loss = 0.5 * loss_weights[1] * \
+					   (TCR_criterion(tcr_seq_pred[0].flatten(end_dim=1), tcr_seq.flatten()) +
+						TCR_criterion(tcr_seq_pred[1].flatten(end_dim=1), tcr_seq.flatten()))
 
-		if scRNA_pred is not None:
-			scRNA_loss = loss_weights[0] * self.calc_scRNA_rec_loss(scRNA_pred, scRNA, scRNA_criterion, size_factor, self.losses[0])
-			loss += scRNA_loss
-		else:
-			scRNA_loss = torch.FloatTensor([0])
+		loss = scRNA_loss + TCR_loss
 
 		return loss, scRNA_loss, TCR_loss
 
@@ -202,9 +217,6 @@ class SeparateModel(VAEBaseModel):
 			tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)
 			seq_datas_train.append(tcr_seq[train_mask])
 			seq_datas_val.append(tcr_seq[~train_mask])
-
-			# sanity = np.concatenate([adata.obsm['alpha_seq'][train_mask], adata.obsm['alpha_seq'][train_mask]], axis=1)
-			# print('Both arrays are the same? - ', (seq_datas_train[0]  == sanity).all())  # check if order is preserved, ie taking mask before and after is the same
 
 			seq_len = np.vstack([adata.obs['alpha_len'], adata.obs['beta_len']]).T
 
