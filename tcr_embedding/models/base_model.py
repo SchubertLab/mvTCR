@@ -23,7 +23,8 @@ class BaseModel:
 					  'params': self.params,
 					  'best_loss': self.best_loss,
 					  'train_masks': self.train_masks,
-					  'best_cls_metric': self.best_cls_metric}
+					  'best_cls_metric': self.best_cls_metric,
+					  'best_knn_metric': self.best_knn_metric}
 		try:
 			model_file['optimizer'] = self.optimizer.state_dict()
 		except:
@@ -52,6 +53,9 @@ class BaseModel:
 		self.train_masks = model_file['train_masks']
 		if 'best_cls_metric' in model_file.keys():  # backward compatibility
 			self.best_cls_metric = model_file['best_cls_metric']
+		if 'best_knn_metric' in model_file.keys():  # backward compatibility
+			self.best_knn_metric = model_file['best_knn_metric']
+
 		try:
 			self.optimizer.load_state_dict(model_file['optimizer'])
 		except:

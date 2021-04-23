@@ -19,6 +19,8 @@ from tcr_embedding.datasets.scdataset import TCRDataset
 from .losses.nb import NB
 from .losses.kld import KLD
 from .base_model import BaseModel
+from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
+from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 
 class VAEBaseModel(BaseModel, ABC):
 	def __init__(self,
@@ -215,6 +217,7 @@ class VAEBaseModel(BaseModel, ABC):
 
 		self.best_loss = 99999999999
 		self.best_cls_metric = -1
+		self.best_knn_metric = -1
 		no_improvements = 0
 		self.epoch = 0
 		epoch2step = 256 / batch_size  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -401,11 +404,32 @@ class VAEBaseModel(BaseModel, ABC):
 			if e % validate_every == 0 and save_last_model:
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
-			if save_every is not None and e % save_every == 0:
-				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
+			# kNN evaluation
+			# if save_every is reached, or in the first 20% of epochs, increase save frequency by 10.
+			if (save_every is not None and e % save_every == 0) or (e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0):
+				test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
+				try:
+					summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val',
+														use_non_binder=True, use_reduced_binders=True)
+				except:
+					tune.report(weighted_f1=0.0)
+					return
 
-			if e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0:
-				self.save(os.path.join(save_path, f'{experiment_name}_epoch_{str(e).zfill(5)}.pt'))
+				metrics = summary['knn']
+				if tune is not None:
+					tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
+
+				for antigen, metric in metrics.items():
+					if antigen != 'accuracy':
+						comet.log_metrics(metric, prefix=antigen, step=int(e*epoch2step), epoch=e)
+					else:
+						comet.log_metric('accuracy', metric, step=int(e*epoch2step), epoch=e)
+
+				if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
+					self.best_knn_metric = metrics['weighted avg']['f1-score']
+					print(f'Best new kNN score at Epoch {e}')
+					print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
+					self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
 
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')

@@ -194,44 +194,9 @@ def objective(params, checkpoint_dir=None, adata=None):
 		num_workers=0,
 		verbose=0,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
 		device=None,
-		comet=experiment
+		comet=experiment,
+		tune=tune
 	)
-	# Evaluate each checkpoint model
-	best_checkpoint = None
-	best_metric = -1
-	metrics_list = []
-	checkpoint_fps = os.listdir(save_path)
-	checkpoint_fps = [checkpoint_fp for checkpoint_fp in checkpoint_fps if '_epoch_' in checkpoint_fp]
-	for checkpoint_fp in tqdm(checkpoint_fps, 'kNN for previous checkpoints: '):
-		if os.path.exists(os.path.join(save_path, checkpoint_fp)):
-			model.load(os.path.join(save_path, checkpoint_fp))
-			test_embedding_func = get_model_prediction_function(model, batch_size=params['batch_size'])
-			try:
-				summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
-			except:
-				tune.report(weighted_f1=0.0)
-				return
-
-			metrics = summary['knn']
-			metrics_list.append(metrics['weighted avg']['f1-score'])
-			for antigen, metric in metrics.items():
-				if antigen != 'accuracy':
-					experiment.log_metrics(metric, prefix=antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
-				else:
-					experiment.log_metric('accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
-
-			if metrics['weighted avg']['f1-score'] > best_metric:
-				best_metric = metrics['weighted avg']['f1-score']
-				best_checkpoint = checkpoint_fp
-				print(f'Best new Checkpoint: {best_checkpoint}')
-				print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
-
-	# Delete checkpoint files except best checkpoint
-	print(f'\n\nBest Overall Checkpoint: {best_checkpoint}')
-	checkpoint_fps.remove(best_checkpoint)
-	for checkpoint_fp in checkpoint_fps:
-		os.remove(os.path.join(save_path, checkpoint_fp))
-
 
 	print('kNN for best reconstruction loss model')
 	# Evaluate Model (best model based on reconstruction loss)
@@ -244,13 +209,13 @@ def objective(params, checkpoint_dir=None, adata=None):
 		return
 
 	metrics = summary['knn']
-	metrics_list.append(metrics['weighted avg']['f1-score'])
 	for antigen, metric in metrics.items():
 		if antigen != 'accuracy':
 			experiment.log_metrics(metric, prefix='best_recon_'+antigen, step=int(model.epoch*epoch2step), epoch=model.epoch)
 		else:
 			experiment.log_metric('best_recon_accuracy', metric, step=int(model.epoch*epoch2step), epoch=model.epoch)
-	
+	tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
+
 	# For visualization purpose, we set all rare specificities to no_data
 	adata.obs['binding_label'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = -1
 	adata.obs['binding_name'][~adata.obs['binding_name'].isin(tcr.constants.HIGH_COUNT_ANTIGENS)] = 'no_data'
@@ -258,7 +223,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
 
 	print('UMAP for best f1 score model')
-	model.load(os.path.join(save_path, best_checkpoint))
+	model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
 	val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
 	fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_val_best_f1')
 	experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor, step=model.epoch)
@@ -274,12 +239,6 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
 	experiment.end()
-
-	# Report Metric back to Tune
-	for metric in metrics_list:
-		print(f'Weighted F1: {metric}')
-		tune.report(weighted_f1=metric)
-		time.sleep(0.5)
 
 
 parser = argparse.ArgumentParser()
