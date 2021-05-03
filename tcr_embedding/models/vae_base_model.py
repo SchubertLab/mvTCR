@@ -118,10 +118,8 @@ class VAEBaseModel(BaseModel, ABC):
 			  save_path='../saved_models/',
 			  save_last_model=True,
 			  num_workers=0,
-			  verbose=1,
 			  continue_training=False,
 			  device=None,
-			  raw_data=None,
 			  comet=None,
 			  tune=None
 			  ):
@@ -295,7 +293,7 @@ class VAEBaseModel(BaseModel, ABC):
 									   'Train CLS Loss': cls_loss_train_total},
 									  step=int(e*epoch2step), epoch=e)
 
-				if self.model_type == 'supervised':# and comet is not None:
+				if self.model_type == 'supervised':  # and comet is not None:
 					labels_gt_list = torch.cat(labels_gt_list).cpu().numpy()
 					labels_gt_list = [self.label_to_specificity[x] for x in labels_gt_list]
 					labels_pred_list = torch.cat(labels_pred_list).cpu().numpy()
@@ -407,46 +405,10 @@ class VAEBaseModel(BaseModel, ABC):
 			# kNN evaluation
 			# if save_every is reached, or in the first 20% of epochs, increase save frequency by 10.
 			if (save_every is not None and e % save_every == 0) or (e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0):
-				test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
-
-				# Without non-binders
-				try:
-					summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val', use_non_binder=False, use_reduced_binders=True)
-				except:
-					if tune is not None:
-						tune.report(weighted_f1=0.0)
-					print(f'kNN failed for epoch {e}')
-					return
-
-				metrics = summary['knn']
-				if tune is not None:
-					tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
-
-				for antigen, metric in metrics.items():
-					if antigen != 'accuracy':
-						comet.log_metrics(metric, prefix=antigen, step=int(e*epoch2step), epoch=e)
-					else:
-						comet.log_metric('accuracy', metric, step=int(e*epoch2step), epoch=e)
-
-				if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
-					self.best_knn_metric = metrics['weighted avg']['f1-score']
-					print(f'Best new kNN score at Epoch {e}')
-					print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
-					self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
-
-				# With non-binders
-				if raw_data is not None:
-					try:
-						summary = run_imputation_evaluation(raw_data, test_embedding_func, query_source='val',
-															use_non_binder=True, use_reduced_binders=True)
-					except:
-						print(f'kNN failed for epoch {e}')
-					metrics = summary['knn']
-					for antigen, metric in metrics.items():
-						if antigen != 'accuracy':
-							comet.log_metrics(metric, prefix='with_no_data_'+antigen, step=int(e*epoch2step), epoch=e)
-						else:
-							comet.log_metric('with_no_data_accuracy', metric, step=int(e*epoch2step), epoch=e)
+				if self.names[0] == '10x':
+					self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name)
+				if self.names[0] == 'bcc':
+					self.report_validation_bcc(loss_val_total, tune)
 
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
@@ -455,6 +417,53 @@ class VAEBaseModel(BaseModel, ABC):
 			if torch.isnan(loss):
 				print(f'Loss became NaN, Loss: {loss}')
 				return
+
+	def report_validation_10x(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name):
+		"""
+		Report the objective metric of the 10x dataset for hyper parameter optimization.
+		:param batch_size: Batch size for creating the validation latent space
+		:param epoch: epoch number for logging
+		:param epoch2step: conversion parameter between epoch and steps
+		:param tune: RayTune object to report to
+		:param comet: Comet experiments for logging validation
+		:param save_path: Path for saving trained models
+		:param experiment_name: Name of the experiment for logging
+		:return: Reports to RayTune log files and externally to comet, saves model.
+		"""
+
+		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
+		try:
+			summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val',
+												use_non_binder=True, use_reduced_binders=True)
+		except:
+			tune.report(weighted_f1=0.0)
+			return
+
+		metrics = summary['knn']
+		if tune is not None:
+			tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
+
+		for antigen, metric in metrics.items():
+			if antigen != 'accuracy':
+				comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
+			else:
+				comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
+
+		if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
+			self.best_knn_metric = metrics['weighted avg']['f1-score']
+			print(f'Best new kNN score at Epoch {epoch}')
+			print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
+			self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
+
+	def report_validation_bcc(self, validation_loss, tune):
+		"""
+		Report the objective metric of the BCC dataset for hyper parameter optimization.
+		:param validation_loss: Reconstruction loss on the validation set
+		:param tune: Ray Tune experiment
+		:return: Reports to RayTune files
+		"""
+		if tune is not None:
+			tune.report(reconstruction=validation_loss)
 
 	def encoder_only(self, scRNA, tcr_seq, tcr_len):
 		"""
@@ -532,65 +541,6 @@ class VAEBaseModel(BaseModel, ABC):
 				zs.append(z)
 
 		return sc.AnnData.concatenate(*zs)
-
-	def kNN(self, train_data, test_data, classes, n_neighbors, weights='distance'):
-		"""
-		Perform kNN using scikit-learn package
-		:param train_data: annData with features in X and class labels in train_data.obs[classes]
-		:param test_data: annData with features in X
-		:param classes: key for class labels in train_data.obs[classes]
-		:param n_neighbors: number of neighbors for kNN
-		:param weights: kNN weights, either 'distance' or 'uniform'
-		:return: Writes results into the column test_data.obs['pred_' + classes]
-		"""
-		clf = KNeighborsClassifier(n_neighbors, weights)
-		X_train = train_data.X
-
-		# Create categorical labels
-		train_data.obs[classes + '_label'] = train_data.obs[classes].astype('category').cat.codes
-		mapping = dict(enumerate(train_data.obs[classes].astype('category').cat.categories))
-		y_train = train_data.obs[classes + '_label'].values
-
-		clf.fit(X_train, y_train)
-
-		test_data.obs['pred_labels'] = clf.predict(test_data.X)
-		test_data.obs['pred_' + classes] = test_data.obs['pred_labels'].map(mapping)
-
-	def antigen_imputation(self, train_adata, val_adata, class_label='binding_name', metadata=['binding_name', 'binding_label'], n_neighbors=5, weights='distance'):
-		"""
-		Perform antigen imputation using kNN
-		:param train_adata: adata, at least has adata.obs[class_label] and usually adata.X is the embedding
-		:param val_adata: adata, at least has adata.obs[class_label] and usually adata.X is the embedding
-		:param class_label: str, column containing labels
-		:param metadata: list of str, further metadata to be contained in result
-		:param n_neighbors: int, number of neighbors to consider
-		:param weights: 'distance' or 'uniform': see sklearn
-		:return: val_adata with results from kNN in adata.obs['pred'+class_label]
-		"""
-		if not class_label in metadata:
-			metadata.append(class_label)
-		z_train = self.get_latent(
-			adatas=[train_adata],
-			batch_size=256,
-			num_workers=0,
-			names=['10x'],
-			gene_layers=[],
-			seq_keys=[],
-			metadata=['binding_name', 'binding_label']
-		)
-
-		z_val = self.get_latent(
-			adatas=[val_adata],
-			batch_size=256,
-			num_workers=0,
-			names=['10x'],
-			gene_layers=[],
-			seq_keys=[],
-			metadata=['binding_name', 'binding_label']
-		)
-		self.kNN(z_train, z_val, class_label, n_neighbors, weights)
-
-		return z_val
 
 	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None, label_key=None):
 		"""
