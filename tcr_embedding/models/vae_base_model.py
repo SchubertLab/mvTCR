@@ -121,6 +121,7 @@ class VAEBaseModel(BaseModel, ABC):
 			  verbose=1,
 			  continue_training=False,
 			  device=None,
+			  raw_data=None,
 			  comet=None,
 			  tune=None
 			  ):
@@ -161,7 +162,7 @@ class VAEBaseModel(BaseModel, ABC):
 			train_datasets, val_datasets, self.train_masks = self.create_datasets(self.adatas, self.names, self.gene_layers, self.seq_keys, val_split, metadata, label_key=self.label_key)
 
 		if balanced_sampling is None:
-			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+			train_dataloader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, num_workers=num_workers, worker_init_fn=self.seed_worker)
 		else:
 			sampling_weights = self.calculate_sampling_weights(self.adatas, self.train_masks, self.names, class_column=balanced_sampling,log_divisor=log_divisor)
 			sampler = WeightedRandomSampler(weights=sampling_weights, num_samples=len(sampling_weights), replacement=True)
@@ -362,7 +363,6 @@ class VAEBaseModel(BaseModel, ABC):
 					TCR_loss_val_total = torch.stack(TCR_loss_val_total).mean().item()
 					KLD_loss_val_total = torch.stack(KLD_loss_val_total).mean().item()
 					cls_loss_val_total = torch.stack(cls_loss_val_total).mean().item()
-
 					if loss_val_total < self.best_loss:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_rec_model.pt'))
@@ -408,11 +408,14 @@ class VAEBaseModel(BaseModel, ABC):
 			# if save_every is reached, or in the first 20% of epochs, increase save frequency by 10.
 			if (save_every is not None and e % save_every == 0) or (e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0):
 				test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
+
+				# Without non-binders
 				try:
-					summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val',
-														use_non_binder=True, use_reduced_binders=True)
+					summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val', use_non_binder=False, use_reduced_binders=True)
 				except:
-					tune.report(weighted_f1=0.0)
+					if tune is not None:
+						tune.report(weighted_f1=0.0)
+					print(f'kNN failed for epoch {e}')
 					return
 
 				metrics = summary['knn']
@@ -430,6 +433,20 @@ class VAEBaseModel(BaseModel, ABC):
 					print(f'Best new kNN score at Epoch {e}')
 					print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
 					self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
+
+				# With non-binders
+				if raw_data is not None:
+					try:
+						summary = run_imputation_evaluation(raw_data, test_embedding_func, query_source='val',
+															use_non_binder=True, use_reduced_binders=True)
+					except:
+						print(f'kNN failed for epoch {e}')
+					metrics = summary['knn']
+					for antigen, metric in metrics.items():
+						if antigen != 'accuracy':
+							comet.log_metrics(metric, prefix='with_no_data_'+antigen, step=int(e*epoch2step), epoch=e)
+						else:
+							comet.log_metric('with_no_data_accuracy', metric, step=int(e*epoch2step), epoch=e)
 
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
