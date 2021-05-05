@@ -1,6 +1,6 @@
 from ray import tune
 
-raise NotImplementedError('Set weight for seq vs scRNA')
+
 params = {'activation': 'leakyrelu',
 		  'batch_norm': True,
 		  'batch_size': tune.choice([256, 512, 1024]),
@@ -8,8 +8,8 @@ params = {'activation': 'leakyrelu',
 		  'hdim': tune.qrandint(100, 1000, 100),
 		  # tune.sample_from(lambda spec: tune.qloguniform(100, spec.config.scRNA_model_hyperparams.gene_hidden[0], 50)),
 		  #           'loss_weights': [1.0, 0.0, tune.qloguniform(5e-6, 5e-3, 5e-6)],
-		  'loss_weights_scRNA': 10.0,
-		  'loss_weights_seq': 10.0,
+		  'loss_weights_scRNA': 2.5,
+		  'loss_weights_seq': 1.0,
 		  'loss_weights_kl': tune.qloguniform(5e-6, 1e0, 5e-6),
 		  'losses': ['MSE', 'CE'],
 		  'lr': tune.qloguniform(1e-5, 1e-2, 1e-5),
@@ -35,6 +35,7 @@ params = {'activation': 'leakyrelu',
 		  'shared_hidden': tune.qrandint(100, 500, 100),
 		  'zdim': tune.qrandint(20, 200, 20)
 		  }
+
 
 init_params = [{'activation': 'leakyrelu',
 				'batch_norm': True,
