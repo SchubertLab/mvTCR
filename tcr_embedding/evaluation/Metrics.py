@@ -8,6 +8,7 @@ from bottleneck import argpartition
 from collections import defaultdict
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report, silhouette_score, adjusted_mutual_info_score
+from scipy import stats
 
 
 def get_recall_at_k(data_atlas, data_query, labels_atlas, labels_query, ks):
@@ -76,3 +77,25 @@ def get_adjusted_mutual_information(labels_true, labels_predicted):
     """
     scores = adjusted_mutual_info_score(labels_true, labels_predicted, average_method='arithmetic')
     return scores
+
+
+def get_square_pearson(ground_truth, prediction):
+    try:
+        x = np.average(ground_truth.X.A, axis=0)
+    except AttributeError:
+        x = np.average(ground_truth.X, axis=0)
+    try:
+        y = np.average(prediction.X.A, axis=0)
+    except AttributeError:
+        y = np.average(prediction.X, axis=0)
+    m, b, r_value, p_value, std_err = stats.linregress(x, y)
+    r_squared = r_value**2
+    report = {
+        'm': m,
+        'b': b,
+        'r_value': r_value,
+        'p_value': p_value,
+        'std_err': std_err,
+        'r_squared': r_squared
+    }
+    return report

@@ -1,7 +1,7 @@
 from ray import tune
 
 
-params = {'activation': 'leakyrelu',
+params = {'activation': tune.choice(['leakyrelu', 'linear']),
 		  'batch_norm': True,
 		  'batch_size': tune.choice([256, 512, 1024]),
 		  'dropout': tune.quniform(0, 0.3, 0.05),

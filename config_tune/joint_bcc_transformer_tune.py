@@ -1,7 +1,7 @@
 from ray import tune
 
 
-params = {'activation': 'leakyrelu',
+params = {'activation': tune.choice(['leakyrelu', 'linear']),
 		  'batch_norm': True,
 		  'batch_size': tune.choice([256, 512, 1024]),
 		  'dropout': tune.quniform(0, 0.3, 0.05),  # TODO Maybe it interferes with batch_norm
@@ -43,8 +43,8 @@ init_params = [{'activation': 'leakyrelu',
 				'dropout': 0.2,
 				'hdim': 800,
 				#           'loss_weights': [1.0, 0.0, 5e-5],
-				'loss_weights_scRNA': 10.0,
-				'loss_weights_seq': 0.0,
+				'loss_weights_scRNA': 2.5,
+				'loss_weights_seq': 1.0,
 				'loss_weights_kl': 5e-5,
 				'losses': ['MSE', 'CE'],
 				'lr': 1e-3,

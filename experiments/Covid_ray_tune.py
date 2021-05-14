@@ -1,4 +1,4 @@
-# python -W ignore 10x_ray_tune.py --model bigru --name test
+
 from comet_ml import Experiment
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -104,7 +104,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 	experiment_name = name + '_' + current_datetime
 	with open(os.path.dirname(__file__) + '/../comet_ml_key/API_key.txt') as f:
 		comet_key = f.read()
-	experiment = Experiment(api_key=comet_key, workspace='bcc', project_name=name)
+	experiment = Experiment(api_key=comet_key, workspace='covid', project_name=name)
 	experiment.log_parameters(params)
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
@@ -142,7 +142,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		dropout=params['dropout'],
 		batch_norm=params['batch_norm'],
 		shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
-		names=['bcc'],
+		names=['reconstruction'],
 		gene_layers=[],  # [] or list of str for layer keys of each dataset
 		seq_keys=[]  # [] or list of str for seq keys of each dataset
 	)
@@ -179,7 +179,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		# Plot UMAPs for model with best reconstruction
 		model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
 
-		figure_groups = ['patient', 'clonotype', 'cluster', 'cluster_tcr', 'treatment', 'response']
+		figure_groups = ['condition', 'T_cells', 'reactive_combined']
 		val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=figure_groups)
 		figures = tcr.utils.plot_umap_list(val_latent, title=name + '_val_best_recon', color_groups=figure_groups)
 		for title, fig in zip(figure_groups, figures):
@@ -202,12 +202,12 @@ parser.add_argument('--balanced_sampling', type=str, default=None, help='name of
 parser.add_argument('--grid_search', action='store_true')
 args = parser.parse_args()
 
-adata = sc.read_h5ad(os.path.dirname(__file__) + '/../data/BCC/06_bcc_highly_var_5000.h5ad')
+adata = sc.read_h5ad(os.path.dirname(__file__) + '/../data/Covid/04_covid_highly_var_5000.h5ad')
 
 params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
-name = f'bcc_tune_{args.model}{args.suffix}'
+name = f'covid_tune_{args.model}{args.suffix}'
 cwd = os.getcwd()
 local_dir = f'{cwd}/../ray_results'
 ray.init(local_mode=args.local_mode)

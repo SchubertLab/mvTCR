@@ -407,8 +407,10 @@ class VAEBaseModel(BaseModel, ABC):
 			if (save_every is not None and e % save_every == 0) or (e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0):
 				if self.names[0] == '10x':
 					self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name)
-				if self.names[0] == 'bcc':
-					self.report_validation_bcc(loss_val_total, tune)
+				if self.names[0] == 'reconstruction':
+					self.report_reconstruction(loss_val_total, tune)
+				if self.names[0] == 'scgen':
+					self.report_scgen()
 
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
@@ -455,15 +457,19 @@ class VAEBaseModel(BaseModel, ABC):
 			print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
 			self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
 
-	def report_validation_bcc(self, validation_loss, tune):
+	def report_reconstruction(self, validation_loss, tune):
 		"""
-		Report the objective metric of the BCC dataset for hyper parameter optimization.
+		Report the reconstruction loss as metric for hyper parameter optimization.
 		:param validation_loss: Reconstruction loss on the validation set
 		:param tune: Ray Tune experiment
 		:return: Reports to RayTune files
 		"""
 		if tune is not None:
 			tune.report(reconstruction=validation_loss)
+
+	def report_scgen(self):
+		raise NotImplementedError
+
 
 	def encoder_only(self, scRNA, tcr_seq, tcr_len):
 		"""
@@ -489,7 +495,8 @@ class VAEBaseModel(BaseModel, ABC):
 
 		return scRNA_pred, tcr_seq_pred
 
-	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[], device=None):
+	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[],
+				   device=None, return_mean=False):
 		"""
 		Get latent
 		:param adatas: list of adatas
@@ -500,6 +507,7 @@ class VAEBaseModel(BaseModel, ABC):
 		:param seq_keys: list of str or [], keys for TCR data, i.e. adata.obsm[seq_keys[i]] for each dataset i, or empty to use adata.obsm['tcr_seq']
 		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
 		:param device: None or str, if None device is determined automatically, based on if cuda.is_available
+		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
 		if device is None:
@@ -530,6 +538,8 @@ class VAEBaseModel(BaseModel, ABC):
 				tcr_seq = tcr_seq.to(device)
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len)
+				if return_mean:
+					z = mu
 				if self.moe:
 					z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
 				elif self.poe:

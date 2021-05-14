@@ -128,7 +128,7 @@ def plot_umap(adata, title):
 	return fig_donor, fig_clonotype, fig_antigen
 
 
-def plot_umap_bcc(adata, title, color_groups):
+def plot_umap_list(adata, title, color_groups):
 	"""
 	Plots UMAPS based with different coloring groups
 	:param adata: Adata Object containing a latent space embedding
@@ -136,10 +136,15 @@ def plot_umap_bcc(adata, title, color_groups):
 	:param color_groups: Column name in adata.obs used for coloring the UMAP
 	:return:
 	"""
+	print('p1----------------------')
 	sc.pp.neighbors(adata, use_rep='X')
+	print('p2----------------------')
 	sc.tl.umap(adata)
+	print('p3----------------------')
 	figures = []
 	for group in color_groups:
+		print('##########################')
+		print(group)
 		fig = sc.pl.umap(adata, color=group, title=title, return_fig=True)
 		fig.tight_layout()
 		figures.append(fig)

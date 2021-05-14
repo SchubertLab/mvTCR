@@ -103,7 +103,7 @@ if __name__ == '__main__':
     print('Reading data')
     test_data = sc.read('../../data/10x_CD8TC/v5_train_val_test.h5ad')
     random.seed(29031995)
-    test_data = test_data[[random.randint(0, test_data.shape[0]-1) for _ in range(int(test_data.shape[0]*0.1))]]
+    # test_data = test_data[[random.randint(0, test_data.shape[0]-1) for _ in range(int(test_data.shape[0]*0.1))]]
     print('Start evaluation')
     res = run_imputation_evaluation(test_data, test_embedding_func, query_source='val',
                                     use_non_binder=True, use_reduced_binders=True)

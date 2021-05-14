@@ -82,3 +82,13 @@ params_test = load_config('transformer')
 model_test = create_model(data_tc, params_test)
 comet_experiment = create_comet_experiment(params_test)
 train_model(model_test, params_test, comet_experiment)
+
+figure_groups = ['patient', 'clonotype', 'cluster', 'cluster_tcr', 'treatment', 'response']
+val_latent = model_test.get_latent([data_tc[data_tc.obs['set'] == 'val']], batch_size=512, metadata=figure_groups)
+figures = tcr.utils.plot_umap_list(val_latent, title='test' + '_val_best_recon', color_groups=figure_groups)
+
+
+"""
+scp 03 felix.drost@sepp:/storage/groups/imm01/workspace/TCR_Embedding/data/BCC
+
+"""
