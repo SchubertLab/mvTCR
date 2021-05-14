@@ -179,7 +179,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		# Plot UMAPs for model with best reconstruction
 		model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
 
-		figure_groups = ['patient', 'clonotype', 'cluster', 'cluster_tcr', 'treatment']
+		figure_groups = ['patient', 'clonotype', 'cluster', 'cluster_tcr', 'treatment', 'response']
 		val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=figure_groups)
 		figures = tcr.utils.plot_umap_bcc(val_latent, title=name + '_val_best_recon', color_groups=figure_groups)
 		for title, fig in zip(figure_groups, figures):
