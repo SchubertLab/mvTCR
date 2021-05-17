@@ -11,7 +11,6 @@ from tqdm import tqdm
 from collections import defaultdict
 import pandas as pd
 import scanpy as sc
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report
 from abc import ABC, abstractmethod
 
@@ -210,7 +209,6 @@ class VAEBaseModel(BaseModel, ABC):
 		CLS_criterion = nn.CrossEntropyLoss()
 
 		self.model = self.model.to(device)
-		self.model.train()
 
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
 
@@ -238,6 +236,8 @@ class VAEBaseModel(BaseModel, ABC):
 			cls_loss_train_total = []
 			labels_gt_list = []
 			labels_pred_list = []
+
+			self.model.train()
 			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
@@ -252,9 +252,10 @@ class VAEBaseModel(BaseModel, ABC):
 				elif self.poe:
 					KLD_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
 							   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1]) + KL_criterion(mu[2], logvar[2]))
-					z = z[2]  # use joint latent variable for further downstream tasks
+					z = mu[2]  # use joint latent variable for further downstream tasks
 				else:
 					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+					z = mu  # make z deterministic by using the mean
 
 				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor)
 				loss = loss + KLD_loss
@@ -403,8 +404,7 @@ class VAEBaseModel(BaseModel, ABC):
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
 			# kNN evaluation
-			# if save_every is reached, or in the first 20% of epochs, increase save frequency by 10.
-			if (save_every is not None and e % save_every == 0) or (e < n_epochs * 0.2 and e % (max(save_every // 10, 1)) == 0):
+			if save_every is not None and e % save_every == 0:
 				if self.names[0] == '10x':
 					self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name)
 				if self.names[0] == 'reconstruction':
@@ -435,10 +435,11 @@ class VAEBaseModel(BaseModel, ABC):
 
 		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
 		try:
-			summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val',
-												use_non_binder=True, use_reduced_binders=True)
+			summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val', use_non_binder=True, use_reduced_binders=True)
 		except:
-			tune.report(weighted_f1=0.0)
+			print(f'kNN did not work')
+			if tune is not None:
+				tune.report(weighted_f1=0.0)
 			return
 
 		metrics = summary['knn']

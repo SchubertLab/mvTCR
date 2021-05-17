@@ -16,3 +16,8 @@ tcr_embedding/models/__pycache__/
 config/
 config_tune/
 *.pdf
+optuna
+*.jpg
+*.pt
+*.db
+*.psd
