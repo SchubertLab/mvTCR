@@ -16,7 +16,6 @@ class TrigonometricPositionalEncoding(nn.Module):
     def __init__(self, embedding_dim, dropout, max_len):
         super(TrigonometricPositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-
         pe = torch.zeros(max_len, embedding_dim)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (-math.log(10000.0) / embedding_dim))

@@ -1,3 +1,4 @@
+import comet_ml
 from comet_ml import Experiment
 
 import scanpy as sc
@@ -113,12 +114,14 @@ def correct_params(params):
     return params
 
 
-def create_model(data, params, model_type, name='bcc'):
+def create_model(data, params, model_type, name='bcc', params_additional=None):
     """
     Create a VAE model.
     :param data: adata object containing the training data
     :param params: hyperparameter of the model
     :param model_type: Class indicating which type of model was used (e.g. MoE)
+    :param name: Name of the dataset
+    :param params_additional: parameters needed to be passed eg for evaluation
     :return: pytorch model
     """
     model = model_type(
@@ -136,7 +139,8 @@ def create_model(data, params, model_type, name='bcc'):
         batch_norm=params['batch_norm'],
         shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
         gene_layers=[],  # [] or list of str for layer keys of each dataset
-        seq_keys=[]  # [] or list of str for seq keys of each dataset
+        seq_keys=[],  # [] or list of str for seq keys of each dataset
+        params_additional=params_additional
     )
     return model
 

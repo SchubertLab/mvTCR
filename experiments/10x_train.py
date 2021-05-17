@@ -55,11 +55,9 @@ def train_model(model):
         val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
         metadata=[],
         validate_every=1,
-        print_every=1,
         save_every=25,
         num_workers=0,
         early_stop=20,
-        verbose=2,  # 0: only tdqm progress bar, 1: val loss, 2: train and val loss
         save_path=PATH_SAVE,
         device=None,
         comet=None

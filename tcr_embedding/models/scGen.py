@@ -3,33 +3,33 @@ import numpy as np
 from anndata import AnnData
 
 import tcr_embedding.utils_training as loading
-import tcr_embedding.models.single_model as single
 import tcr_embedding.evaluation.Pertubation as Eval
 
 
 class PertubationPredictor:
-    def __init__(self, model, data_source='bcc', verbosity=1):
+    def __init__(self, model, data, verbosity=1):
         self.verbosity = verbosity
 
-        self.print_verbose('-Loading Data')
-        self.data = loading.load_data(data_source)
+        if isinstance(data, str):
+            loading.load_data(data)
+        self.data = data
 
         self.print_verbose('-Loading Model')
         self.model = model
 
     @classmethod
-    def from_model_checkpoint(cls, path_model, path_config, model_type, data_source='bcc', verbosity=1):
+    def from_model_checkpoint(cls, path_model, path_config, model_type, data='bcc', verbosity=1):
         """
         Initialize with path to model instead of model
         :param path_model:
         :param path_config:
         :param model_type:
-        :param data_source:
+        :param data:
         :param verbosity:
         :return: initialized object
         """
-        model = loading.load_model(loading.load_data(data_source), path_config, path_model, model_type)
-        return cls(model, data_source=data_source, verbosity=verbosity)
+        model = loading.load_model(loading.load_data(data), path_config, path_model, model_type)
+        return cls(model, data=data, verbosity=verbosity)
 
     def evaluate_pertubation(self, pertubation, splitting_criteria, per_column, indicator='pre'):
         """
@@ -37,7 +37,6 @@ class PertubationPredictor:
         :param pertubation: name of the column used to indicate peturbation state
         :param splitting_criteria: dict {column: value} how to split the dataset for validation
         :param per_column: None: calculate 1 delta on data, str: use individual delta per group in this column
-        :param do_test: bool, if true the final test set is used
         :param indicator: str indicates what symbol in pertubation column represents pre and post
         :return: Score indicating the performance of the pertubation model
         """
@@ -54,7 +53,6 @@ class PertubationPredictor:
         """
         Split data to training and validation set.
         :param splitting_criteria: dictionary {adata.obs_column: value} which samples to select to validation set
-        :param do_test: Whether or not to use the Training set or Validation set
         :return: 2 adata objects with training und validation data
         """
         masks = []  # todo change set_pertubation
@@ -167,14 +165,3 @@ class PertubationPredictor:
             return
         if self.verbosity == 1:
             print(statement)
-
-
-if __name__ == '__main__':
-    pertubator = PertubationPredictor.from_model_checkpoint(
-                                        path_model='saved_models/bcc_selected/singleRNA/20210505_05-45-59_67f8291e/'
-                                                 'checkpoint_0/bcc_tune_single_bcc_scRNA_best_rec_model.pt',
-                                        path_config='saved_models/bcc_selected/singleRNA/20210505_05-45-59_67f8291e/',
-                                        model_type=single.SingleModel,
-                                        data_source='bcc', verbosity=1)
-    pertubator.evaluate_pertubation(pertubation='treatment', splitting_criteria={'patient': 'su009'},
-                                    per_column='cluster', indicator='pre')

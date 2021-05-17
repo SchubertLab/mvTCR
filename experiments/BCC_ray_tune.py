@@ -165,7 +165,7 @@ def objective(params, checkpoint_dir=None, adata=None):
 		val_split='set',  # float or str, if float: split is determined automatically, if str: used as key for train-val column
 		early_stop=early_stop,
 		balanced_sampling=args.balanced_sampling,
-		validate_every=5,
+		validate_every=1,
 		save_every=save_every,
 		save_path=save_path,
 		save_last_model=False,

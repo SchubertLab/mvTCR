@@ -136,15 +136,10 @@ def plot_umap_list(adata, title, color_groups):
 	:param color_groups: Column name in adata.obs used for coloring the UMAP
 	:return:
 	"""
-	print('p1----------------------')
 	sc.pp.neighbors(adata, use_rep='X')
-	print('p2----------------------')
 	sc.tl.umap(adata)
-	print('p3----------------------')
 	figures = []
 	for group in color_groups:
-		print('##########################')
-		print(group)
 		fig = sc.pl.umap(adata, color=group, title=title, return_fig=True)
 		fig.tight_layout()
 		figures.append(fig)
