@@ -118,13 +118,13 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
-	if 'single' in args.model and 'separate' not in args.model:
+	if 'single' in params['name'] and 'separate' not in params['name']:
 		init_model = tcr.models.single_model.SingleModel
-	elif 'moe' in args.model:
+	elif 'moe' in params['name']:
 		init_model = tcr.models.moe.MoEModel
-	elif 'poe' in args.model:
+	elif 'poe' in params['name']:
 		init_model = tcr.models.poe.PoEModel
-	elif 'separate' in args.model:
+	elif 'separate' in params['name']:
 		init_model = tcr.models.separate_model.SeparateModel
 	else:
 		init_model = tcr.models.joint_model.JointModel
@@ -189,8 +189,8 @@ def objective(params, checkpoint_dir=None, adata=None):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='Resumes previous training', default=False)
-parser.add_argument('--model', type=str, default='single_scRNA')
-parser.add_argument('--suffix', type=str, default='')
+parser.add_argument('--model', type=str, default='joint_transformer')
+parser.add_argument('--suffix', type=str, default='poe')
 parser.add_argument('--n_epochs', type=int, default=5000)
 parser.add_argument('--early_stop', type=int, default=100)
 parser.add_argument('--num_samples', type=int, default=100)
@@ -208,6 +208,7 @@ params = importlib.import_module(f'{args.model}_tune').params
 init_params = importlib.import_module(f'{args.model}_tune').init_params
 
 name = f'covid_tune_{args.model}{args.suffix}'
+params['name'] = name
 cwd = os.getcwd()
 local_dir = f'{cwd}/../ray_results'
 ray.init(local_mode=args.local_mode)
