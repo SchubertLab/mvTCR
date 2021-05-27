@@ -1,13 +1,14 @@
 import random
 import tcr_embedding.evaluation.WrapperFunctions as Wrapper
 import tcr_embedding.evaluation.Metrics as Metrics
+from tcr_embedding.constants import ANTIGEN_COLORS
 
 import scanpy as sc
 from anndata import AnnData
 
 
 def run_clustering_evaluation(data_full, embedding_function, source_data='val', name_label='clonotype',
-                              cluster_params=None):
+                              cluster_params=None, visualize=False):
     """
     Function for evaluating the embedding quality based upon imputation in the 10x dataset
     :param data_full: anndata object containing the full cell data (TCR + Genes) (train, val, test)
@@ -23,8 +24,11 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
     assert len(data_eval) > 0, 'Empty data set. Specifier are "val" or "test"'
 
     embeddings = embedding_function(data_eval)
+    embeddings_adata = AnnData(embeddings)
+    embeddings_adata.obs[name_label] = data_eval.obs[name_label].to_numpy()
+
     labels_true = data_eval.obs[name_label].to_numpy()
-    labels_predicted = predict_clustering(embeddings, cluster_params)
+    labels_predicted = predict_clustering(embeddings_adata, cluster_params, visualize, name_label)
 
     scores = get_clustering_scores(embeddings, labels_true, labels_predicted)
     return scores
@@ -41,19 +45,27 @@ def filter_data(data):
     return data
 
 
-def predict_clustering(embeddings, params):
+def predict_clustering(adata, params, visualize=False, name_label=None):
     """
     Calculate cluster labels based on leiden algorithm
-    :param embeddings: numpy array (num_samples, dim_hidden) representing the latent space embedding of each cell
+    :param adata: annData with X containing the embeddings (num_samples, dim_hidden)
     :param params: parameter of leiden clustering
     :return: numpy array (num_cells,) containing cluster annotation
     """
     if params is None:
         params = {'resolution': 1,
                   'num_neighbors': 5}
-    adata = AnnData(embeddings)
     sc.pp.neighbors(adata, n_neighbors=params['num_neighbors'], use_rep='X', random_state=29031995)
+
     sc.tl.leiden(adata, resolution=params['resolution'], random_state=29031995)
+    if visualize:
+        sc.tl.umap(adata)
+        palette = None
+        if name_label == 'binding_name':
+            palette = ANTIGEN_COLORS
+        sc.pl.umap(adata, color=name_label, palette=palette)
+        sc.pl.umap(adata, color='leiden', title=f'resolution = {params["resolution"]}')
+
     return adata.obs['leiden'].to_numpy()
 
 
@@ -66,9 +78,15 @@ def get_clustering_scores(embeddings, labels_true, labels_predicted):
     :param labels_predicted: predicted cluster annotation for internal / external evaluation
     :return: dictionary {metric_name: metric_score}
     """
+    try:
+        silhouette_score = Metrics.get_silhouette_scores(embeddings, labels_predicted)
+    except:
+        silhouette_score = None
     summary = {
-        'silhouette_score': Metrics.get_silhouette_scores(embeddings, labels_predicted),
-        'AMI': Metrics.get_adjusted_mutual_information(labels_true, labels_predicted)
+        'silhouette_score': silhouette_score,
+        'AMI': Metrics.get_adjusted_mutual_information(labels_true, labels_predicted),
+        'NMI': Metrics.get_normalized_mutual_information(labels_true, labels_predicted),
+        'ARI': Metrics.get_adjusted_random_score(labels_true, labels_predicted)
     }
     return summary
 
