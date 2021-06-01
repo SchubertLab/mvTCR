@@ -18,7 +18,10 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
     :param cluster_params: parameters for leiden clustering, None for default
     :return: dictionary {metric: summary} containing the evaluation scores
     """
-    data_eval = data_full[data_full.obs['set'] == source_data]
+    if source_data == 'all':
+        data_eval = data_full
+    else:
+        data_eval = data_full[data_full.obs['set'] == source_data]
     data_eval = filter_data(data_eval)
 
     assert len(data_eval) > 0, 'Empty data set. Specifier are "val" or "test"'
@@ -80,13 +83,12 @@ def get_clustering_scores(embeddings, labels_true, labels_predicted):
     """
     try:
         silhouette_score = Metrics.get_silhouette_scores(embeddings, labels_predicted)
+    # If the number of cluster is 1, then ASW can't be calculated and raises an Error
     except:
         silhouette_score = None
     summary = {
-        'silhouette_score': silhouette_score,
-        'AMI': Metrics.get_adjusted_mutual_information(labels_true, labels_predicted),
-        'NMI': Metrics.get_normalized_mutual_information(labels_true, labels_predicted),
-        'ARI': Metrics.get_adjusted_random_score(labels_true, labels_predicted)
+        'ASW': silhouette_score,
+        'NMI': Metrics.get_normalized_mutual_information(labels_true, labels_predicted)
     }
     return summary
 

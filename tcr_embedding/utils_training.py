@@ -1,6 +1,6 @@
 import comet_ml
 from comet_ml import Experiment
-
+import warnings
 import scanpy as sc
 import os
 import yaml
@@ -222,3 +222,71 @@ def select_model_by_name(model_name):
     else:
         init_model = models.joint_model.JointModel
     return init_model
+
+
+def init_model(params, model_type, adata, dataset_name):
+    if model_type == 'RNA':
+        init_model_func = models.single_model.SingleModel
+    elif model_type == 'PoE':
+        init_model_func = models.poe.PoEModel
+    elif model_type == 'concat' or model_type == 'TCR':
+        init_model_func = models.separate_model.SeparateModel
+    else:
+        raise NotImplementedError(f'The specified model {model_type} is not implemented, please try one of the follow ["RNA", "TCR", "concat", "PoE"]')
+
+    if model_type == 'RNA' and params['seq_model_arch'] != 'None':
+        warnings.warn('You specified RNA as model_type, but params contains TCR-seq hyperparameters, these will be ignored')
+        params['seq_model_arch'] = 'None'
+        params['seq_model_hyperparams'] = {}
+
+    if model_type == 'TCR' and params['scRNA_model_arch'] != 'None':
+        warnings.warn('You specified TCR as model_type, but params contains RNA-seq hyperparameters, these will be ignored')
+        params['scRNA_model_arch'] = 'None'
+        params['scRNA_model_hyperparams'] = {}
+
+    model = init_model_func(
+        adatas=[adata],  # adatas containing gene expression and TCR-seq
+        names=[dataset_name],
+        aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
+        seq_model_arch=params['seq_model_arch'],  # seq model architecture
+        seq_model_hyperparams=params['seq_model_hyperparams'],  # dict of seq model hyperparameters
+        scRNA_model_arch=params['scRNA_model_arch'],
+        scRNA_model_hyperparams=params['scRNA_model_hyperparams'],
+        zdim=params['zdim'],  # zdim
+        hdim=params['hdim'],  # hidden dimension of scRNA and seq encoders
+        activation=params['activation'],  # activation function of autoencoder hidden layers
+        dropout=params['dropout'],
+        batch_norm=params['batch_norm'],
+        shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
+        gene_layers=[],  # [] or list of str for layer keys of each dataset
+        seq_keys=[],  # [] or list of str for seq keys of each dataset
+    )
+
+    return model
+
+
+def show_umap(adata, test_embedding_func, color='binding_name', source_data='train', min_dist=0.5, spread=1.0, palette=None):
+
+    adata = adata[adata.obs['set'] == source_data]
+    latent = test_embedding_func(adata)
+    adata.obsm['latent'] = latent
+    sc.pp.neighbors(adata, use_rep='latent')
+    sc.tl.umap(adata, min_dist=min_dist, spread=spread)
+    sc.pl.umap(adata, color=color, palette=palette, ncols=1)
+
+
+def determine_marker_genes(adata, resolution, visualize=False):
+    adata = adata[adata.obs['set'] == 'train']
+    sc.pp.neighbors(adata, use_rep='X')
+    sc.tl.leiden(adata, resolution=resolution)
+    if visualize:
+        sc.tl.umap(adata)  # for visualization only
+        sc.pl.umap(adata, color='leiden')
+
+    # Filter TRA and TRB which forms the T-cell receptor
+    adata = adata[:, ~((adata.var.index.str.contains('TRA')) | (adata.var.index.str.contains('TRB')))]
+    sc.tl.rank_genes_groups(adata, groupby='leiden')
+    highly_variable = list(adata.uns['rank_genes_groups']['names'][0])
+
+    return highly_variable
+

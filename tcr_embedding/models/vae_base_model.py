@@ -112,17 +112,17 @@ class VAEBaseModel(BaseModel, ABC):
               batch_size=64,
               lr=3e-4,
               losses=['MSE', 'CE'],
-              loss_weights=[],
+              loss_weights=None,
               kl_annealing_epochs=None,
               val_split='set',
-              metadata=[],
+              metadata=None,
               early_stop=None,
               balanced_sampling=None,
               log_divisor=10,
-              validate_every=10,
-              save_every=100,
+              validate_every=1,
+              save_every=1,
               save_path='../saved_models/',
-              save_last_model=True,
+              save_last_model=False,
               num_workers=0,
               continue_training=False,
               device=None,
@@ -140,15 +140,14 @@ class VAEBaseModel(BaseModel, ABC):
         :param loss_weights: list of floats, loss_weights[0]:=weight or scRNA loss, loss_weights[1]:=weight for TCR loss, loss_weights[2] := KLD Loss
         :param kl_annealing_epochs: int or None, int number of epochs until kl reaches maximum warmup, if None this value is set to 30% of n_epochs
         :param val_split: str or float, if str it indicates the adata.obs[val_split] containing 'train' and 'val', if float, adata is split randomly by val_split
-        :param metadata: list of str, list of metadata that is needed, not really useful at the moment #TODO maybe delete this
+        :param metadata: list of str, list of metadata that is needed, not really useful at the moment
         :param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
         :param balanced_sampling: None or str, indicate adata.obs column to balance
         :param validate_every: int, epochs to validate
         :param save_every: int, epochs to save intermediate model weights
         :param save_path: str, path to directory to save model
         :param num_workers: int, number of workers for dataloader
-        :param verbose: 0, 1 or 2 - 0: only tqdm progress bar, 1: include val metrics, 2: include train metrics
-        :param continue_training: bool, continue training from previous state, loads last saved model and optimizer state
+        :param continue_training: bool, continue training from previous state, loads last saved model with the same experiment name and optimizer state
         :param device: None or str, if None device is determined automatically, based on if cuda.is_available
         :param comet: None or comet_ml.Experiment object
         :return:
@@ -157,6 +156,11 @@ class VAEBaseModel(BaseModel, ABC):
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+        if metadata is None:
+            metadata = []
+
+        if balanced_sampling not in metadata:
+            metadata.append(balanced_sampling)
         print('Create Dataloader')
         # Initialize dataloader
         if continue_training:
@@ -201,12 +205,12 @@ class VAEBaseModel(BaseModel, ABC):
         if kl_annealing_epochs is None:
             kl_annealing_epochs = int(0.3 * n_epochs)
 
-        if len(loss_weights) == 0:
+        if loss_weights is None:
             loss_weights = [1.0] * 3
         elif len(loss_weights) == 3 or len(loss_weights) == 4:
             loss_weights = loss_weights
         else:
-            raise ValueError(f'length of loss_weights must be 3, 4 or [].')
+            raise ValueError(f'length of loss_weights must be 3, 4 (supervised) or None.')
 
         self.losses = losses
         if losses[0] == 'MSE':
@@ -471,11 +475,12 @@ class VAEBaseModel(BaseModel, ABC):
         if tune is not None:
             tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
 
-        for antigen, metric in metrics.items():
-            if antigen != 'accuracy':
-                comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
-            else:
-                comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
+        if comet is not None:
+            for antigen, metric in metrics.items():
+                if antigen != 'accuracy':
+                    comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
+                else:
+                    comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
 
         if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
             self.best_knn_metric = metrics['weighted avg']['f1-score']

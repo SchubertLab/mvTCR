@@ -2,17 +2,17 @@
 
 seq_model_arch: Transformer
 seq_model_hyperparams:
-  embedding_size: 64
+  embedding_size: 32
   num_heads: 4
-  forward_expansion: 4
-  encoding_layers: 6
-  decoding_layers: 6
+  forward_expansion: 2
+  encoding_layers: 2
+  decoding_layers: 2
   dropout: 0.1
 
 scRNA_model_arch: MLP
 scRNA_model_hyperparams:
   gene_hidden:
-    - 800
+    - 1000
   activation: leakyrelu
   output_activation: relu
   dropout: 0.2
@@ -30,7 +30,7 @@ shared_hidden:
 zdim: 100
 
 # Loss and optimizer
-lr: 3.0e-4
+lr: 1.0e-4
 batch_size: 256
 losses:
   - MSE
