@@ -283,8 +283,8 @@ def determine_marker_genes(adata, resolution, visualize=False):
         sc.tl.umap(adata)  # for visualization only
         sc.pl.umap(adata, color='leiden')
 
-    # Filter TRA and TRB which forms the T-cell receptor
-    adata = adata[:, ~((adata.var.index.str.contains('TRA')) | (adata.var.index.str.contains('TRB')))]
+    # Filter TRA, TRB and TRG which forms the T-cell receptor
+    adata = adata[:, ~((adata.var.index.str.contains('TRA')) | (adata.var.index.str.contains('TRB') | (adata.var.index.str.contains('TRG'))))]
     sc.tl.rank_genes_groups(adata, groupby='leiden')
     highly_variable = list(adata.uns['rank_genes_groups']['names'][0])
 
