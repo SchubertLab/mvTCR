@@ -8,6 +8,7 @@ from bottleneck import argpartition
 from collections import defaultdict
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report, silhouette_score, adjusted_mutual_info_score
+from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from scipy import stats
 
 
@@ -75,7 +76,29 @@ def get_adjusted_mutual_information(labels_true, labels_predicted):
     :param labels_predicted: predicted labels based on clustering in latent space
     :return: Adjusted mutual information score
     """
-    scores = adjusted_mutual_info_score(labels_true, labels_predicted, average_method='arithmetic')
+    scores = adjusted_mutual_info_score(labels_true, labels_predicted)
+    return scores
+
+
+def get_normalized_mutual_information(labels_true, labels_predicted):
+    """
+    Calculates the NMI score as external cluster evaluation
+    :param labels_true: ground truth labels for external cluster evaluation
+    :param labels_predicted: predicted labels based on clustering in latent space
+    :return: Normalized mutual information score
+    """
+    scores = normalized_mutual_info_score(labels_true, labels_predicted)
+    return scores
+
+
+def get_adjusted_rand_index(labels_true, labels_predicted):
+    """
+    Calculates the AMI score as external cluster evaluation
+    :param labels_true: ground truth labels for external cluster evaluation
+    :param labels_predicted: predicted labels based on clustering in latent space
+    :return: Adjusted rand index
+    """
+    scores = adjusted_rand_score(labels_true, labels_predicted)
     return scores
 
 

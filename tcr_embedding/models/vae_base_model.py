@@ -601,6 +601,15 @@ class VAEBaseModel(BaseModel, ABC):
 
         return sc.AnnData.concatenate(*zs)
 
+    def predict_sc_rna(self, data_in):
+        if not self.poe:
+            joint_encoding = self.model.model.shared_decoder(data_in)
+            prediction_cells = self.model.model.gene_decoder(joint_encoding).detach().cpu().numpy()
+            return prediction_cells
+        else:
+            pass
+
+
     def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None,
                         label_key=None):
         """
