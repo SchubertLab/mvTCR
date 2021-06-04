@@ -7,8 +7,10 @@ from tqdm import tqdm
 from bottleneck import argpartition
 from collections import defaultdict
 from sklearn.neighbors import KNeighborsClassifier
+
 from sklearn.metrics import classification_report, silhouette_score, adjusted_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
+
 from scipy import stats
 
 
@@ -65,7 +67,11 @@ def get_silhouette_scores(embeddings, labels_predicted):
     :param labels_predicted: predicted labels based on clustering in latent space
     :return:
     """
-    score = silhouette_score(embeddings, labels_predicted, metric='euclidean', random_state=29031995)
+    try:
+        score = silhouette_score(embeddings, labels_predicted, metric='euclidean', random_state=29031995)
+    # If the number of cluster is 1, then ASW can't be calculated and raises an Error
+    except:
+        score = None
     return score
 
 
@@ -87,16 +93,16 @@ def get_normalized_mutual_information(labels_true, labels_predicted):
     :param labels_predicted: predicted labels based on clustering in latent space
     :return: Normalized mutual information score
     """
-    scores = normalized_mutual_info_score(labels_true, labels_predicted)
+    scores = normalized_mutual_info_score(labels_true, labels_predicted, average_method='arithmetic')
     return scores
 
 
-def get_adjusted_rand_index(labels_true, labels_predicted):
+def get_adjusted_random_score(labels_true, labels_predicted):
     """
     Calculates the AMI score as external cluster evaluation
     :param labels_true: ground truth labels for external cluster evaluation
     :param labels_predicted: predicted labels based on clustering in latent space
-    :return: Adjusted rand index
+    :return: Adjusted mutual information score
     """
     scores = adjusted_rand_score(labels_true, labels_predicted)
     return scores

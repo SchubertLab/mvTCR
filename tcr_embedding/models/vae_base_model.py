@@ -111,18 +111,18 @@ class VAEBaseModel(BaseModel, ABC):
               n_epochs=100,
               batch_size=64,
               lr=3e-4,
-              losses=['MSE', 'CE'],
-              loss_weights=[],
+              losses=None,
+              loss_weights=None,
               kl_annealing_epochs=None,
               val_split='set',
-              metadata=[],
+              metadata=None,
               early_stop=None,
               balanced_sampling=None,
               log_divisor=10,
-              validate_every=10,
-              save_every=100,
+              validate_every=1,
+              save_every=1,
               save_path='../saved_models/',
-              save_last_model=True,
+              save_last_model=False,
               num_workers=0,
               continue_training=False,
               device=None,
@@ -140,15 +140,14 @@ class VAEBaseModel(BaseModel, ABC):
         :param loss_weights: list of floats, loss_weights[0]:=weight or scRNA loss, loss_weights[1]:=weight for TCR loss, loss_weights[2] := KLD Loss
         :param kl_annealing_epochs: int or None, int number of epochs until kl reaches maximum warmup, if None this value is set to 30% of n_epochs
         :param val_split: str or float, if str it indicates the adata.obs[val_split] containing 'train' and 'val', if float, adata is split randomly by val_split
-        :param metadata: list of str, list of metadata that is needed, not really useful at the moment #TODO maybe delete this
+        :param metadata: list of str, list of metadata that is needed, not really useful at the moment
         :param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
         :param balanced_sampling: None or str, indicate adata.obs column to balance
         :param validate_every: int, epochs to validate
         :param save_every: int, epochs to save intermediate model weights
         :param save_path: str, path to directory to save model
         :param num_workers: int, number of workers for dataloader
-        :param verbose: 0, 1 or 2 - 0: only tqdm progress bar, 1: include val metrics, 2: include train metrics
-        :param continue_training: bool, continue training from previous state, loads last saved model and optimizer state
+        :param continue_training: bool, continue training from previous state, loads last saved model with the same experiment name and optimizer state
         :param device: None or str, if None device is determined automatically, based on if cuda.is_available
         :param comet: None or comet_ml.Experiment object
         :return:
@@ -156,7 +155,14 @@ class VAEBaseModel(BaseModel, ABC):
 
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if losses is None:
+            losses = ['MSE', 'CE']
 
+        if metadata is None:
+            metadata = []
+
+        if balanced_sampling not in metadata:
+            metadata.append(balanced_sampling)
         print('Create Dataloader')
         # Initialize dataloader
         if continue_training:
@@ -201,12 +207,12 @@ class VAEBaseModel(BaseModel, ABC):
         if kl_annealing_epochs is None:
             kl_annealing_epochs = int(0.3 * n_epochs)
 
-        if len(loss_weights) == 0:
+        if loss_weights is None:
             loss_weights = [1.0] * 3
         elif len(loss_weights) == 3 or len(loss_weights) == 4:
             loss_weights = loss_weights
         else:
-            raise ValueError(f'length of loss_weights must be 3, 4 or [].')
+            raise ValueError(f'length of loss_weights must be 3, 4 (supervised) or None.')
 
         self.losses = losses
         if losses[0] == 'MSE':
@@ -241,8 +247,10 @@ class VAEBaseModel(BaseModel, ABC):
             self.load(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
             self.epoch += 1
             print(f'Continue training from epoch {self.epoch}')
+        pbar = tqdm(range(self.epoch, n_epochs + 1), 'Epoch: ')
 
-        for e in tqdm(range(self.epoch, n_epochs + 1), 'Epoch: '):
+        # for e in tqdm(range(self.epoch, n_epochs + 1), 'Epoch: '):
+        for e in pbar:
             self.epoch = e
             # TRAIN LOOP
             loss_train_total = []
@@ -430,7 +438,7 @@ class VAEBaseModel(BaseModel, ABC):
             # kNN evaluation
             if save_every is not None and e % save_every == 0:
                 if self.names[0] == '10x':
-                    self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name)
+                    self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
                 if self.names[0] == 'reconstruction':
                     self.report_reconstruction(loss_val_total, tune)
                 if self.names[0] == 'scgen':
@@ -444,7 +452,7 @@ class VAEBaseModel(BaseModel, ABC):
                 print(f'Loss became NaN, Loss: {loss}')
                 return
 
-    def report_validation_10x(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name):
+    def report_validation_10x(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name, pbar):
         """
         Report the objective metric of the 10x dataset for hyper parameter optimization.
         :param batch_size: Batch size for creating the validation latent space
@@ -471,17 +479,17 @@ class VAEBaseModel(BaseModel, ABC):
         if tune is not None:
             tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
 
-        for antigen, metric in metrics.items():
-            if antigen != 'accuracy':
-                comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
-            else:
-                comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
+        if comet is not None:
+            for antigen, metric in metrics.items():
+                if antigen != 'accuracy':
+                    comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
+                else:
+                    comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
 
         if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
             self.best_knn_metric = metrics['weighted avg']['f1-score']
-            print(f'Best new kNN score at Epoch {epoch}')
-            print(f"Score : {metrics['weighted avg']['f1-score']}\n\n")
             self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
+            pbar.set_postfix(best_f1_score=self.best_knn_metric, best_epoch=epoch)
 
     def report_reconstruction(self, validation_loss, tune):
         """
@@ -518,30 +526,6 @@ class VAEBaseModel(BaseModel, ABC):
                                       step=int(epoch * epoch2step), epoch=epoch)
             except KeyError:
                 pass
-
-    def encoder_only(self, scRNA, tcr_seq, tcr_len):
-        """
-        Forward pass of autoencoder
-        :param scRNA: torch.Tensor shape=[batch_size, num_genes]
-        :param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
-        :return: scRNA_pred, tcr_seq_pred
-        """
-        h_scRNA = self.model.gene_encoder(scRNA)  # shape=[batch_size, hdim]
-        h_tcr_seq = self.model.seq_encoder(tcr_seq, tcr_len)  # shape=[batch_size, hdim]
-
-        joint_feature = torch.cat([h_scRNA, h_tcr_seq], dim=-1)
-        z_ = self.model.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
-        mu, logvar = z_[:, :z_.shape[1] // 2], z_[:, z_.shape[1] // 2:]  # mu.shape = logvar.shape = [batch_size, zdim]
-        z = self.model.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
-
-        return z, mu, logvar
-
-    def decoder_only(self, z, tcr_seq):
-        joint_dec_feature = self.model.shared_decoder(z)  # shape=[batch_size, hdim*2]
-        scRNA_pred = self.model.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
-        tcr_seq_pred = self.model.seq_decoder(joint_dec_feature, tcr_seq)
-
-        return scRNA_pred, tcr_seq_pred
 
     def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[],
                    device=None, return_mean=False):
