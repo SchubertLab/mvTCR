@@ -85,7 +85,7 @@ def get_clustering_scores(embeddings, labels_true, labels_predicted):
         'ASW': Metrics.get_silhouette_scores(embeddings, labels_predicted),
         'AMI': Metrics.get_adjusted_mutual_information(labels_true, labels_predicted),
         'NMI': Metrics.get_normalized_mutual_information(labels_true, labels_predicted),
-        'ARI': Metrics.get_adjusted_rand_index(labels_true, labels_predicted)
+        'ARI': Metrics.get_adjusted_random_score(labels_true, labels_predicted)
     }
     return summary
 

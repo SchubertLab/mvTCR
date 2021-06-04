@@ -71,7 +71,7 @@ def get_silhouette_scores(embeddings, labels_predicted):
         score = silhouette_score(embeddings, labels_predicted, metric='euclidean', random_state=29031995)
     # If the number of cluster is 1, then ASW can't be calculated and raises an Error
     except:
-        score = None
+        score = -99
     return score
 
 
