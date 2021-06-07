@@ -18,6 +18,8 @@ from abc import ABC, abstractmethod
 from tcr_embedding.datasets.scdataset import TCRDataset
 from .losses.nb import NB
 from .losses.kld import KLD
+from .losses.CoVWeightening import CoVWeighter
+
 from .base_model import BaseModel
 from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
@@ -158,10 +160,15 @@ class VAEBaseModel(BaseModel, ABC):
         if losses is None:
             losses = ['MSE', 'CE']
 
+        # initialize Coefficient of Variance weighting method if required
+        if 'CoV' in self.names[0]:
+            cov_weighter = CoVWeighter(comet=comet, device=device)
+        else:
+            cov_weighter = None
         if metadata is None:
             metadata = []
 
-        if balanced_sampling not in metadata:
+        if balanced_sampling not in metadata and balanced_sampling is not None:
             metadata.append(balanced_sampling)
         print('Create Dataloader')
         # Initialize dataloader
@@ -285,6 +292,14 @@ class VAEBaseModel(BaseModel, ABC):
 
                 loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights,
                                                                  scRNA_criterion, TCR_criterion, size_factor)
+                if cov_weighter is not None:
+                    # first remove the loss weights from the individual losses
+                    scRNA_loss /= loss_weights[0] + 1e-8
+                    TCR_loss /= loss_weights[1] + 1e-8
+                    # second calculate new weights based on cov
+                    weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=True)
+                    loss = weight_tcr * TCR_loss + weight_rna * scRNA_loss
+
                 loss = loss + KLD_loss
                 if self.model_type == 'supervised':
                     labels_pred = self.model.classify(z)
@@ -370,6 +385,12 @@ class VAEBaseModel(BaseModel, ABC):
                         loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq,
                                                                          loss_weights, scRNA_criterion, TCR_criterion,
                                                                          size_factor)
+                        if cov_weighter is not None:
+                            scRNA_loss /= loss_weights[0]
+                            TCR_loss /= loss_weights[1]
+                            weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=False)
+                            loss = weight_tcr * TCR_loss + weight_rna * scRNA_loss
+
                         loss = loss + KLD_loss
                         if self.model_type == 'supervised':
                             labels_pred = self.model.classify(z)
@@ -439,7 +460,7 @@ class VAEBaseModel(BaseModel, ABC):
             if save_every is not None and e % save_every == 0:
                 if self.names[0] == '10x':
                     self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
-                if self.names[0] == 'reconstruction':
+                if 'reconstruction' in self.names[0]:
                     self.report_reconstruction(loss_val_total, tune)
                 if self.names[0] == 'scgen':
                     self.report_scgen(tune, comet, e, epoch2step)

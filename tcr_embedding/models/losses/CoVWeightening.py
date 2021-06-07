@@ -5,24 +5,28 @@ Method re-implemented from:
  Authors: Groenendijk, Karaoglu, Gevers, Mensink
 """
 
-import math
+import torch
 
 
 class IndividualCoV:
-    def __init__(self, name, comet=None):
+    def __init__(self, name, comet=None, device='cpu'):
         """
         Initialize an individual CoV weight tracker
         :param name: Name of the loss for logging purposes
         :param comet: Comet ML experiment for logging purposes
+        :param device: pytorch device (e.g. cuda:0, cpu, ...)
         """
-        self.name = f'CoV_weight_{name}'
+        self.name = f'CoV_{name}'
         self.comet = comet
+        self.device = device
 
-        self.running_mean_l = 0.
-        self.running_mean_L = 0.
+        # running variables for the mean and mean normalized losses
+        self.running_mean_L = torch.tensor(0., requires_grad=False, device=device)
+        self.running_mean_l = torch.tensor(0., requires_grad=False, device=device)
 
-        self.running_s_l = 0.
-        self.running_std = 0.
+        # running variables for the sample and population variances
+        self.running_s_l = torch.tensor(0., requires_grad=False, device=device)
+        self.running_std = torch.tensor(0., requires_grad=False, device=device)
         self.step = 0
 
     def get_weight(self, loss_new):
@@ -33,30 +37,9 @@ class IndividualCoV:
         """
         weight = self.calculate_weight()
         self.keep_running_stats(loss_new)
-        self.report_weights(weight)
+        self.report(weight)
         self.step += 1
         return weight
-
-    def keep_running_stats(self, loss_new):
-        """
-        Update the running std and mean by Welford's algorithm
-        :param loss_new: the loss of the current step
-        :return: updates self.running_mean, self.running_std
-        """
-        loss_norm = loss_new / self.running_mean_L
-        if self.step == 0:
-            mean_param = 0.
-        else:
-            mean_param = 1. - 1. / (self.step + 1)
-
-        new_running_mean_l = mean_param * self.running_mean_l + (1-mean_param) * loss_norm
-        self.running_s_l += (loss_norm - self.running_mean_l) * (loss_norm - new_running_mean_l)
-        self.running_mean_l = new_running_mean_l
-
-        running_variance_l = self.running_s_l / (self.step + 1)
-        self.running_std = math.sqrt(running_variance_l + 1e-8)
-
-        self.running_mean_L = mean_param * self.running_mean_L + (1 - mean_param) * loss_new
 
     def calculate_weight(self):
         """
@@ -66,9 +49,35 @@ class IndividualCoV:
         if self.step == 0:
             return 1.
         else:
-            return self.running_std / self.running_mean_l
+            return self.running_std / (self.running_mean_l + 1e-8)
 
-    def report_weights(self, weight):
+    def keep_running_stats(self, loss_cur):
+        """
+        Update the running std and mean by Welford's algorithm
+        :param loss_cur: the loss of the current step
+        :return: updates self.running_mean, self.running_std
+        """
+        # detach: the gradient should not be passed through the loss weights over time
+        loss_new = loss_cur.clone().detach()
+
+        l_0 = loss_new if self.step == 0 else self.running_mean_L
+        loss_norm = loss_new / l_0
+
+        if self.step == 0:
+            mean_param = torch.tensor(0., requires_grad=False, device=self.device)
+        else:
+            mean_param = 1. - 1. / (self.step + 1)
+
+        new_running_mean_l = mean_param * self.running_mean_l + (1-mean_param) * loss_norm
+        self.running_s_l += (loss_norm - self.running_mean_l) * (loss_norm - new_running_mean_l)
+        self.running_mean_l = new_running_mean_l
+
+        running_variance_l = self.running_s_l / (self.step + 1)
+        self.running_std = torch.sqrt(running_variance_l + 1e-8)
+
+        self.running_mean_L = mean_param * self.running_mean_L + (1 - mean_param) * loss_new
+
+    def report(self, weight):
         """
         Reports the Weight to comet if Experiment is provided.
         :param weight: The CoV weight of the current step
@@ -76,17 +85,28 @@ class IndividualCoV:
         """
         if self.comet is None:
             return
-        self.comet.log_metric(self.name, weight, step=self.step)
+
+        report_dict = {
+            'weight': weight,
+            'mean_l': self.running_mean_l,
+            'mean_L': self.running_mean_L,
+            's': self.running_s_l,
+            'std': self.running_std,
+
+        }
+        self.comet.log_metrics(report_dict, prefix=f'{self.name}_', step=self.step)
 
 
-class CoVWeights:
-    def __init__(self, comet):
+class CoVWeighter:
+    def __init__(self, comet, device):
         """
         Initializes the Coefficient of Variation Weighting method.
         :param comet: Comet ML Experiment to log the individual losses
+        :param device: pytorch device (e.g. cuda:0, cpu, ...)
         """
-        self.cov_tcr = IndividualCoV(name='TCR', comet=comet)
-        self.cov_rna = IndividualCoV(name='scRNA', comet=comet)
+        self.device = device
+        self.cov_tcr = IndividualCoV(name='TCR', comet=comet, device=device)
+        self.cov_rna = IndividualCoV(name='scRNA', comet=comet, device=device)
 
     def get_weights(self, loss_tcr_new, loss_rna_new, is_train=True):
         """
@@ -101,8 +121,8 @@ class CoVWeights:
             weight_rna = self.cov_rna.get_weight(loss_rna_new)
         else:
             # approximately equal weighting by usual magnitude
-            weight_tcr = 2.5
-            weight_rna = 1.0
+            weight_tcr = torch.tensor(2.5, requires_grad=False, device=self.device)
+            weight_rna = torch.tensor(1., requires_grad=False, device=self.device)
 
         # normalize the weights to sum 1
         param_normalize = weight_tcr + weight_rna
