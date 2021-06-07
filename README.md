@@ -36,10 +36,7 @@ Also the intel-openmp package is missing:
 Wu 2020 3k dataset is part of scirpy. Just run the `preprocessing/download_wu2020_3k_toy_dataset.ipynb`
 
 ### BCC Dataset
-#### Option 1: Download the data in h5ad format directy
-https://tumde-my.sharepoint.com/:f:/g/personal/yang_an_tum_de/EuAeGXist_BCsI0vdJo0T1QBKT54JyG7-A5iRMeGJnhfLA?e=zz9wmC
-
-#### Option 2: Download raw data and preprocess
+Download raw data and preprocess
 First download the raw data from here: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE123813 (all 4 BCC files) 
 Unzip them into `data/Yost_2018/`
 
