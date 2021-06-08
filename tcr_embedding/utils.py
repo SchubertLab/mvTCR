@@ -140,7 +140,7 @@ def plot_umap_list(adata, title, color_groups):
 	sc.tl.umap(adata)
 	figures = []
 	for group in color_groups:
-		fig = sc.pl.umap(adata, color=group, title=title, return_fig=True)
+		fig = sc.pl.umap(adata, color=group, title=title+'_'+group, return_fig=True)
 		fig.tight_layout()
 		figures.append(fig)
 	return figures

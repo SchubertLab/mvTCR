@@ -225,21 +225,21 @@ def select_model_by_name(model_name):
 
 
 def init_model(params, model_type, adata, dataset_name):
-    if model_type == 'RNA':
+    if model_type.lower() == 'rna':
         init_model_func = models.single_model.SingleModel
-    elif model_type == 'PoE':
+    elif model_type.lower() == 'poe':
         init_model_func = models.poe.PoEModel
-    elif model_type == 'concat' or model_type == 'TCR':
+    elif model_type.lower() == 'concat' or model_type.lower() == 'tcr':
         init_model_func = models.separate_model.SeparateModel
     else:
         raise NotImplementedError(f'The specified model {model_type} is not implemented, please try one of the follow ["RNA", "TCR", "concat", "PoE"]')
 
-    if model_type == 'RNA' and params['seq_model_arch'] != 'None':
+    if model_type.lower() == 'rna' and params['seq_model_arch'] != 'None':
         warnings.warn('You specified RNA as model_type, but params contains TCR-seq hyperparameters, these will be ignored')
         params['seq_model_arch'] = 'None'
         params['seq_model_hyperparams'] = {}
 
-    if model_type == 'TCR' and params['scRNA_model_arch'] != 'None':
+    if model_type.lower() == 'tcr' and params['scRNA_model_arch'] != 'None':
         warnings.warn('You specified TCR as model_type, but params contains RNA-seq hyperparameters, these will be ignored')
         params['scRNA_model_arch'] = 'None'
         params['scRNA_model_hyperparams'] = {}

@@ -22,7 +22,6 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
         data_eval = data_full
     else:
         data_eval = data_full[data_full.obs['set'] == source_data]
-    data_eval = filter_data(data_eval)
 
     assert len(data_eval) > 0, 'Empty data set. Specifier are "val" or "test"'
 
@@ -35,17 +34,6 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
 
     scores = get_clustering_scores(embeddings, labels_true, labels_predicted)
     return scores
-
-
-def filter_data(data):
-    """
-    Select data on which evaluation is performed
-    :param data: annData object containing the cell data
-    :return: 2 anndata objects containing only the filtered data
-    """
-    data = data[data.obs['has_ir'] == 'True']
-    data = data[data.obs['multi_chain'] == 'False']
-    return data
 
 
 def predict_clustering(adata, params, visualize=False, name_label=None):
