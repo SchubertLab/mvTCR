@@ -2,12 +2,13 @@ scanpy==1.7.0
 scirpy==0.6.1
 numba==0.52.0
 pandas==1.2.3
+anndata==0.7.5
+leidenalg=0.8.4
 comet-ml
-numpy
-scikit-learn
+numpy==1.20.3
+scikit-learn==0.24.1
+scrublet==0.2.3
 tqdm
-leidenalg
-anndata
 optuna
 ray[tune]
 
