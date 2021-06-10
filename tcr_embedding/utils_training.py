@@ -231,8 +231,10 @@ def init_model(params, model_type, adata, dataset_name):
         init_model_func = models.poe.PoEModel
     elif model_type.lower() == 'concat' or model_type.lower() == 'tcr':
         init_model_func = models.separate_model.SeparateModel
+    elif model_type.lower() == 'single':
+        init_model_func = models.single_model.SingleModel
     else:
-        raise NotImplementedError(f'The specified model {model_type} is not implemented, please try one of the follow ["RNA", "TCR", "concat", "PoE"]')
+        raise NotImplementedError(f'The specified model {model_type} is not implemented, please try one of the follow ["RNA", "TCR", "concat", "PoE", "single"]')
 
     if model_type.lower() == 'rna' and params['seq_model_arch'] != 'None':
         warnings.warn('You specified RNA as model_type, but params contains TCR-seq hyperparameters, these will be ignored')
