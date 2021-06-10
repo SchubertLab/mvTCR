@@ -168,7 +168,7 @@ class VAEBaseModel(BaseModel, ABC):
         if metadata is None:
             metadata = []
 
-        if balanced_sampling not in metadata and balanced_sampling is not None:
+        if balanced_sampling is not None and balanced_sampling not in metadata:
             metadata.append(balanced_sampling)
         print('Create Dataloader')
         # Initialize dataloader

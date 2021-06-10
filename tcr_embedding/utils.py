@@ -56,13 +56,13 @@ def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, 
 		for x_seq, token_id_seq in zip(one_hot, token_ids):
 			for x, token_id in zip(x_seq, token_id_seq):
 				x[token_id] = 1.0
-		adata.obs[ohe_col] = one_hot
+		# adata.obs[ohe_col] = one_hot
 		adata.obsm[ohe_col] = np.stack(one_hot)
 
 	# If specified write label as index sequence
 	if label_col is not None:
 		token_ids = [np.array(token_id) for token_id in token_ids]
-		adata.obs[label_col] = token_ids
+		# adata.obs[label_col] = token_ids
 		adata.obsm[label_col] = np.stack(token_ids)
 
 	adata.uns['aa_to_id'] = aa_to_id
@@ -140,7 +140,7 @@ def plot_umap_list(adata, title, color_groups):
 	sc.tl.umap(adata)
 	figures = []
 	for group in color_groups:
-		fig = sc.pl.umap(adata, color=group, title=title, return_fig=True)
+		fig = sc.pl.umap(adata, color=group, title=title+'_'+group, return_fig=True)
 		fig.tight_layout()
 		figures.append(fig)
 	return figures

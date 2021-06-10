@@ -1,39 +1,20 @@
-## All-in-one-line:
-### Create environment and install packages
+## Install all dependencies using this one-liner:
+cd to the cloned directory and execute the following
 
-`conda create --name tcr python=3.8 -y && conda activate tcr && conda install seaborn scikit-learn statsmodels numba pytables nb_conda_kernels -y && conda install -c conda-forge python-igraph leidenalg -y && pip install scanpy scirpy comet-ml && conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch -y`
+`conda create --name tcr python=3.8.8 -y && conda activate tcr && pip install -r requirements.txt && conda install nb_conda_kernels -y && conda install bottleneck -y`
 
-### Fix some bugs (on Windows):
-
-`pip uninstall h5py -y && conda install h5py -y && conda install -c defaults intel-openmp -f -y`
-
-## Step-by-step: 
-### Create conda environment and install requirements
-
-`conda create --name tcr python=3.8`
-
-`conda install seaborn scikit-learn statsmodels numba pytables nb_conda_kernels`
-
-`conda install -c conda-forge python-igraph leidenalg`
-
-`pip install scanpy scirpy comet-ml`
-
-`conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch`
-
-### Fix some bugs on Windows
-The `h5py` package is not detected properly, so we need to reinstall it:
-
-`pip uninstall h5py`
-
-`conda install h5py`
-
-Also the intel-openmp package is missing:
-
-`conda install -c defaults intel-openmp -f`
 
 ## Get Datasets
-### Wu 2020 3k Toy dataset
-Wu 2020 3k dataset is part of scirpy. Just run the `preprocessing/download_wu2020_3k_toy_dataset.ipynb`
+### 10x
+Download the raw data, save to `data/10x_CD8TC/patient*` with * indicating the patient number and preprocess using `preprocessing/10x_preprocessing.ipynb`
+
+The files for all four donors can be downloaded form here: https://support.10xgenomics.com/single-cell-vdj/datasets under the section `Application Note - A New Way of Exploring Immunity`
+
+In particular the following files are needed:
+- ``vdj_v1_hs_aggregated_donor*_filtered_feature_bc_matrix.h5``
+- ``vdj_v1_hs_aggregated_donor*_all_contig_annotations.csv``
+- ``vdj_v1_hs_aggregated_donor*_binarized_matrix.csv``
+
 
 ### BCC Dataset
 Download raw data and preprocess
@@ -43,4 +24,7 @@ Unzip them into `data/Yost_2018/`
 Then run the `preprocessing/bcc_save_as_h5ad.ipynb` Notebook for preprocessing.
 
 ## Example
-For a walkthrough of this API please refer to the following notebook `example/tcr_first_example.ipynb`
+We provide an example on how to train new models using either a config file or using Optuna for automatic hyperparameter optimization under `experiments/10x_optuna_tutorial.ipynb`
+
+Further, we provide notebooks to reproduce the results from our paper in `experiments/10x_evaluate_models.ipynb` and `experiments/covid_evaluation.ipynb`. The pretrained model weights can be downloaded from here: XXX
+Please also refer to the Get Datasets section to retrieve and preprocess the data.

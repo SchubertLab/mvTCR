@@ -20,3 +20,4 @@ optuna
 *.pt
 *.db
 *.psd
+/experiments/figures
