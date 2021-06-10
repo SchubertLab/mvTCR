@@ -1,12 +1,18 @@
 ## Install all dependencies using this one-liner:
 cd to the cloned directory and execute the following
 
+### Linux
 `conda create --name tcr python=3.8.8 -y && conda activate tcr && pip install -r requirements.txt && conda install nb_conda_kernels -y && conda install bottleneck -y`
 
+### Windows
+Please uncomment torch from the requirements.txt, i.e. write a # before torch
+Then execute the line to install all the requirements except PyTorch
+`conda create --name tcr python=3.8.8 -y && conda activate tcr && pip install -r requirements.txt && conda install nb_conda_kernels -y && conda install bottleneck -y`
 
+Then install PyTorch 1.8.0 with the correct CUDA Version following the command here: https://pytorch.org/get-started/previous-versions/
 ## Get Datasets
 ### 10x
-Download the raw data, save to `data/10x_CD8TC/patient*` with * indicating the patient number and preprocess using `preprocessing/10x_preprocessing.ipynb`
+Download the raw data, save to `data/10x_CD8TC/patient_*` with * indicating the patient number and preprocess using `preprocessing/10x_preprocessing.ipynb`
 
 The files for all four donors can be downloaded form here: https://support.10xgenomics.com/single-cell-vdj/datasets under the section `Application Note - A New Way of Exploring Immunity`
 
@@ -22,6 +28,15 @@ First download the raw data from here: https://www.ncbi.nlm.nih.gov/geo/query/ac
 Unzip them into `data/Yost_2018/`
 
 Then run the `preprocessing/bcc_save_as_h5ad.ipynb` Notebook for preprocessing.
+
+### Covid Dataset
+Dataset containing SARS-CoV-2 T cells described in https://www.medrxiv.org/content/10.1101/2020.12.07.20245274v1
+
+Later available under https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE171037
+
+Move the data into `data/Covid/`
+
+Then run the `preprocessing/covid_preprocessing.ipynb` Notebook for preprocessing.
 
 ## Example
 We provide an example on how to train new models using either a config file or using Optuna for automatic hyperparameter optimization under `experiments/10x_optuna_tutorial.ipynb`
