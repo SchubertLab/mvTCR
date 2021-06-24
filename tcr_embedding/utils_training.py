@@ -224,7 +224,7 @@ def select_model_by_name(model_name):
     return init_model
 
 
-def init_model(params, model_type, adata, dataset_name):
+def init_model(params, model_type, adata, dataset_name, use_cov=False):
     if model_type.lower() == 'rna':
         init_model_func = models.single_model.SingleModel
     elif model_type.lower() == 'poe':
@@ -248,7 +248,7 @@ def init_model(params, model_type, adata, dataset_name):
 
     model = init_model_func(
         adatas=[adata],  # adatas containing gene expression and TCR-seq
-        names=[dataset_name],
+        names=[dataset_name + '_CoV' if use_cov else ''],
         aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
         seq_model_arch=params['seq_model_arch'],  # seq model architecture
         seq_model_hyperparams=params['seq_model_hyperparams'],  # dict of seq model hyperparameters
