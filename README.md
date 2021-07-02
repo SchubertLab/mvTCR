@@ -46,7 +46,7 @@ Please also refer to the Get Datasets section to retrieve and preprocess the dat
 
 ## Reference 
 
-If mvTCR is useful in your research, please consider citing  
+If mvTCR is useful in your research, please consider citing:  
 ```
 @article{an2021jointly,
   title={Jointly learning T-cell receptor and transcriptomic information to decipher the immune response},
