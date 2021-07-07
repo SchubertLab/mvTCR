@@ -29,16 +29,19 @@ class IndividualCoV:
         self.running_std = torch.tensor(0., requires_grad=False, device=device)
         self.step = 0
 
-    def get_weight(self, loss_new):
+    def get_weight(self, loss_new, is_train):
         """
         Provides the weight Value based on the CoV method
         :param loss_new: the loss of the current step
+        :param is_train: boolean indicating whether the model is training or validating
         :return: the CoV weight
         """
         weight = self.calculate_weight()
-        self.keep_running_stats(loss_new)
-        self.report(weight)
-        self.step += 1
+        # If train, update running stats
+        if is_train:
+            self.keep_running_stats(loss_new)
+            self.report(weight)
+            self.step += 1
         return weight
 
     def calculate_weight(self):
@@ -47,7 +50,7 @@ class IndividualCoV:
         :return: weight by the CoV method
         """
         if self.step == 0:
-            return 1.
+            return torch.tensor(1., requires_grad=False, device=self.device)
         else:
             return self.running_std / (self.running_mean_l + 1e-8)
 
@@ -117,12 +120,15 @@ class CoVWeighter:
         :return: (float, float) the loss
         """
         if is_train:
-            weight_tcr = self.cov_tcr.get_weight(loss_tcr_new)
-            weight_rna = self.cov_rna.get_weight(loss_rna_new)
+            weight_tcr = self.cov_tcr.get_weight(loss_tcr_new, is_train)
+            weight_rna = self.cov_rna.get_weight(loss_rna_new, is_train)
         else:
+            weight_tcr = self.cov_tcr.get_weight(loss_tcr_new, is_train)
+            weight_rna = self.cov_rna.get_weight(loss_rna_new, is_train)
+
             # approximately equal weighting by usual magnitude
-            weight_tcr = torch.tensor(2.5, requires_grad=False, device=self.device)
-            weight_rna = torch.tensor(1., requires_grad=False, device=self.device)
+            # weight_tcr = torch.tensor(2.5, requires_grad=False, device=self.device)
+            # weight_rna = torch.tensor(1., requires_grad=False, device=self.device)
 
         # normalize the weights to sum 1
         param_normalize = weight_tcr + weight_rna

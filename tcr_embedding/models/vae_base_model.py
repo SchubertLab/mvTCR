@@ -267,6 +267,8 @@ class VAEBaseModel(BaseModel, ABC):
             cls_loss_train_total = []
             labels_gt_list = []
             labels_pred_list = []
+            cov_TCR_weights = []
+            cov_scRNA_weights = []
 
             self.model.train()
             for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels in train_dataloader:
@@ -294,11 +296,13 @@ class VAEBaseModel(BaseModel, ABC):
                                                                  scRNA_criterion, TCR_criterion, size_factor)
                 if cov_weighter is not None:
                     # first remove the loss weights from the individual losses
-                    scRNA_loss /= loss_weights[0] + 1e-8
-                    TCR_loss /= loss_weights[1] + 1e-8
-                    # second calculate new weights based on cov
                     weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=True)
-                    loss = weight_tcr * TCR_loss + weight_rna * scRNA_loss
+                    scRNA_loss = scRNA_loss / (loss_weights[0] + 1e-8) * weight_rna
+                    TCR_loss = TCR_loss / (loss_weights[1] + 1e-8) * weight_tcr
+                    # second calculate new weights based on cov
+                    loss = TCR_loss + scRNA_loss
+                    cov_TCR_weights.append(weight_tcr)
+                    cov_scRNA_weights.append(weight_rna)
 
                 loss = loss + KLD_loss
                 if self.model_type == 'supervised':
@@ -327,6 +331,13 @@ class VAEBaseModel(BaseModel, ABC):
                 TCR_loss_train_total = torch.stack(TCR_loss_train_total).mean().item()
                 KLD_loss_train_total = torch.stack(KLD_loss_train_total).mean().item()
                 cls_loss_train_total = torch.stack(cls_loss_train_total).mean().item()
+                if len(cov_scRNA_weights) != 0:
+                    cov_scRNA_weights = torch.stack(cov_scRNA_weights).mean().item()
+                    cov_TCR_weights = torch.stack(cov_TCR_weights).mean().item()
+                    if comet is not None:
+                        comet.log_metrics({'CoV_scRNA_weight_norm': cov_scRNA_weights,
+                                           'CoV_TCR_weight_norm': cov_TCR_weights},
+                                          step=int(e*epoch2step), epoch=e)
 
                 if comet is not None:
                     comet.log_metrics({'Train Loss': loss_train_total,
@@ -386,10 +397,12 @@ class VAEBaseModel(BaseModel, ABC):
                                                                          loss_weights, scRNA_criterion, TCR_criterion,
                                                                          size_factor)
                         if cov_weighter is not None:
-                            scRNA_loss /= loss_weights[0]
-                            TCR_loss /= loss_weights[1]
+                            # first remove the loss weights from the individual losses
                             weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=False)
-                            loss = weight_tcr * TCR_loss + weight_rna * scRNA_loss
+                            scRNA_loss = scRNA_loss / (loss_weights[0] + 1e-8) * weight_rna
+                            TCR_loss = TCR_loss / (loss_weights[1] + 1e-8) * weight_tcr
+                            # second calculate new weights based on cov
+                            loss = TCR_loss + scRNA_loss
 
                         loss = loss + KLD_loss
                         if self.model_type == 'supervised':
@@ -549,7 +562,7 @@ class VAEBaseModel(BaseModel, ABC):
                 pass
 
     def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[],
-                   device=None, return_mean=False):
+                   device=None, return_mean=True):
         """
         Get latent
         :param adatas: list of adatas

@@ -43,3 +43,16 @@ We provide an example on how to train new models using either a config file or u
 
 Further, we provide notebooks to reproduce the results from our paper in `experiments/10x_evaluate_models.ipynb` and `experiments/covid_evaluation.ipynb`. The pretrained model weights can be downloaded from here: XXX
 Please also refer to the Get Datasets section to retrieve and preprocess the data.
+
+## Reference 
+
+If mvTCR is useful in your research, please consider citing:  
+```
+@article{an2021jointly,
+  title={Jointly learning T-cell receptor and transcriptomic information to decipher the immune response},
+  author={An, Yang and Drost, Felix and Theis, Fabian and Schubert, Benjamin and Lotfollahi, Mohammad},
+  journal={bioRxiv},
+  year={2021},
+  publisher={Cold Spring Harbor Laboratory}
+}
+```
