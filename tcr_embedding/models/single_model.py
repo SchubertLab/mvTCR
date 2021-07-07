@@ -14,7 +14,8 @@ def none_model(hyperparams, hdim, xdim):
 
 
 class SingleModelTorch(nn.Module):
-	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
+	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
 		super(SingleModelTorch, self).__init__()
 
 		assert scRNA_model_arch != 'None' or seq_model_arch != 'None', 'At least scRNA- or seq-model needs to be not None'
@@ -36,20 +37,28 @@ class SingleModelTorch(nn.Module):
 		self.seq_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim, num_seq_labels)
 		self.seq_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim*num_modalities, num_seq_labels)
 
+
 		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
 		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim*num_modalities)
 
-		self.shared_encoder = MLP(hdim*num_modalities, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.shared_decoder = MLP(zdim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		if num_conditional_labels > 0:
+			self.cond_emb = torch.nn.Embedding(num_conditional_labels, cond_dim)
+		self.cond_input = cond_input
+		cond_input_dim = cond_dim if cond_input else 0
+
+		self.shared_encoder = MLP(hdim*num_modalities+cond_input_dim, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.shared_decoder = MLP(zdim+cond_dim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-	def forward(self, scRNA, tcr_seq, tcr_len):
+	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
-		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
+		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, num_seq_labels]
+		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
+		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 
@@ -62,11 +71,20 @@ class SingleModelTorch(nn.Module):
 		else:
 			raise AssertionError('Please use Joint Model')
 
+		if conditional is not None:
+			cond_emb_vec = self.cond_emb(conditional)
+			if self.cond_input:  # condition input flag is set
+				joint_feature = torch.cat([joint_feature, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
+
 		z_ = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
 		mu, logvar = z_[:, :z_.shape[1]//2], z_[:, z_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z = self.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
 
-		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim]
+		if conditional is not None:
+			z_input = torch.cat([z, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+cond_emb_dim]
+		else:
+			z_input = z  # shape=[batch_size, hdim]
+		joint_dec_feature = self.shared_decoder(z_input)  # shape=[batch_size, hdim]
 
 		if self.scRNA_model_arch != 'None' and self.seq_model_arch == 'None':
 			scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
@@ -74,6 +92,8 @@ class SingleModelTorch(nn.Module):
 		elif self.seq_model_arch != 'None' and self.scRNA_model_arch == 'None':
 			tcr_seq_pred = self.seq_decoder(joint_dec_feature, tcr_seq)
 			scRNA_pred = 0
+		else:
+			raise AssertionError('Please use Joint Model')
 
 		return z, mu, logvar, scRNA_pred, tcr_seq_pred
 
@@ -106,17 +126,26 @@ class SingleModel(VAEBaseModel):
 				 names=[],
 				 gene_layers=[],
 				 seq_keys=[],
-				 params_additional=None
+				 params_additional=None,
+				 conditional=None
 				 ):
 
-		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										  zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional)
+		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,
+										  scRNA_model_hyperparams, zdim, hdim, activation, dropout, batch_norm,
+										  shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
 
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
+		if self.conditional is not None:
+			num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			cond_dim = 20  # TODO maybe make it a hyperparam
+		else:
+			num_conditional_labels = 0
+			cond_dim = 0
 
 		self.model = SingleModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-									  seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+									  seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
+									  num_conditional_labels, cond_dim)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		# Only scRNA model

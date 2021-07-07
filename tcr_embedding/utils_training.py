@@ -224,7 +224,7 @@ def select_model_by_name(model_name):
     return init_model
 
 
-def init_model(params, model_type, adata, dataset_name, use_cov=False):
+def init_model(params, model_type, adata, dataset_name, use_cov=False, conditional=None):
     if model_type.lower() == 'rna':
         init_model_func = models.single_model.SingleModel
     elif model_type.lower() == 'poe':
@@ -262,6 +262,7 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False):
         shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
         gene_layers=[],  # [] or list of str for layer keys of each dataset
         seq_keys=[],  # [] or list of str for seq keys of each dataset
+        conditional=conditional
     )
 
     return model

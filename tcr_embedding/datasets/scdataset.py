@@ -12,7 +12,8 @@ class TCRDataset(torch.utils.data.Dataset):
 			dataset_names,
 			index_list,
 			metadata,
-			labels=None
+			labels=None,
+			conditional=None
 	):
 		"""
 		:param scRNA_datas: list of gene expressions, where each element is a numpy or sparse matrix of one dataset
@@ -28,6 +29,13 @@ class TCRDataset(torch.utils.data.Dataset):
 		self.index_list = index_list
 		self.metadata = np.concatenate(metadata, axis=0).tolist()
 		self.seq_len = torch.LongTensor(seq_len)
+
+		if conditional is not None:
+			self.conditional = np.concatenate(conditional)
+			# Reduce the one-hot-encoding back to labels
+			self.conditional = torch.LongTensor(self.conditional.argmax(1))  # LongTensor since it is going to be embedded
+		else:
+			self.conditional = None
 
 		# Concatenate datasets to be able to shuffle data through
 		self.scRNA_datas = []
@@ -56,12 +64,16 @@ class TCRDataset(torch.utils.data.Dataset):
 		return len(self.scRNA_datas)
 
 	def __getitem__(self, idx):
-		# arbitrary additional info from adatas
-		# self.adatas[self.dataset_names[idx]].obs.loc[self.index_list[idx]][column]
 		if self.labels is None:
-			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], False
+			if self.conditional is None:
+				return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], False, False
+			else:
+				return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], False, self.conditional[idx]
 		else:
-			return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], self.labels[idx]
+			if self.conditional is None:
+				return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], self.labels[idx], False
+			else:
+				return self.scRNA_datas[idx], self.seq_datas[idx], self.size_factors[idx], self.dataset_names[idx], self.index_list[idx], self.seq_len[idx], self.metadata[idx], self.labels[idx], self.conditional[idx]
 
 
 class DeepTCRDataset(torch.utils.data.Dataset):

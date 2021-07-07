@@ -1,3 +1,4 @@
+# deprecated, uses the concatenated alpha and beta chain which has less performance than two chain-separated models
 import torch
 import torch.nn as nn
 

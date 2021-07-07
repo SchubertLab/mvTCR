@@ -56,12 +56,12 @@ def objective(trial):
 	if params['seq_model_arch'] == 'CNN':
 		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
+	experiment.log_parameters(vars(args))
 
-	adata = sc.read_h5ad('../data/Haniffa/v2_preprocessed.h5ad')
+	adata = sc.read_h5ad('../data/Haniffa/v3_conditional.h5ad')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
-	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov)
-
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov, conditional=args.conditional)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -90,7 +90,8 @@ def objective(trial):
 		comet=experiment
 	)
 
-	color_groups = ['clonotype', 'full_clustering', 'initial_clustering', 'Sex', 'Swab_result', 'Status', 'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome', 'Site']
+	color_groups = ['Site', 'patient_id', 'Sex', 'full_clustering', 'clonotype', 'initial_clustering', 'Swab_result',
+					'Status',  'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome']
 	if os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
 		# UMAP
 		print('UMAP for best reconstruction loss model on val')
@@ -147,6 +148,7 @@ parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--early_stop', type=int, default=100)
 parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--balanced_sampling', type=str, default=None)
+parser.add_argument('--conditional', type=str, default=None)
 parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
 args = parser.parse_args()
 
@@ -159,7 +161,7 @@ else:
 	init_params = importlib.import_module(f'haniffa_{args.model.lower()}').init_params
 	name = f'haniffa_{args.model}{args.suffix}'
 
-name = name + ('_CoV' if args.use_cov else '')
+name = name + ('_CoV' if args.use_cov else '') + (f'_cond_{args.conditional}' if args.conditional is not None else '')
 if not os.path.exists(f'../optuna/{name}'):
 	os.makedirs(f'../optuna/{name}')
 
