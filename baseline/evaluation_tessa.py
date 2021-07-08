@@ -38,10 +38,11 @@ def run_tessa(dir_in, dir_out):
     :param dir_out: Path to the output directory
     :return: several output files in dir_out
     """
+    path_file = os.path.dirname(os.path.abspath(__file__))
     settings_full = {
         'tcr': f'{dir_in}/tcrs_atlas.csv',
-        'model': './TESSA/BriseisEncoder/TrainedEncoder.h5',
-        'embeding_vectors': './TESSA/BriseisEncoder/Atchley_factors.csv',
+        'model': f'{path_file}/TESSA/BriseisEncoder/TrainedEncoder.h5',
+        'embeding_vectors': f'{path_file}/TESSA/BriseisEncoder/Atchley_factors.csv',
         'output_TCR': f'{dir_out}/tessa_tcr_embedding.csv',
         'output_log': f'{dir_out}/tessa_log.log',
         'exp': f'{dir_in}/scRNA_atlas.csv',
@@ -50,7 +51,7 @@ def run_tessa(dir_in, dir_out):
 
     }
 
-    command_full = 'python ./TESSA/Tessa_main.py'
+    command_full = f'python {path_file}/TESSA/Tessa_main.py'
     for key, value in settings_full.items():
         command_full += f' -{key} {value}'
 
@@ -64,14 +65,15 @@ def run_briseis(dir_in, dir_out):
     :param dir_out: Path to the output directory
     :return: several output files in dir_out
     """
+    path_file = os.path.dirname(os.path.abspath(__file__))
     settings_ae = {
         'tcr': f'{dir_in}/tcrs_query.csv',
-        'model': './TESSA/BriseisEncoder/TrainedEncoder.h5',
-        'embeding_vectors': './TESSA/BriseisEncoder/Atchley_factors.csv',
+        'model': f'{path_file}/TESSA/BriseisEncoder/TrainedEncoder.h5',
+        'embeding_vectors': f'{path_file}/TESSA/BriseisEncoder/Atchley_factors.csv',
         'output_TCR': f'{dir_out}/tessa_tcr_embedding.csv',
         'output_log': f'{dir_out}/tessa_log.log',
     }
-    command_ae = 'python ./TESSA/BriseisEncoder/BriseisEncoder.py'
+    command_ae = f'python {path_file}/TESSA/BriseisEncoder/BriseisEncoder.py'
 
     for key, value in settings_ae.items():
         command_ae += f' -{key} {value}'
