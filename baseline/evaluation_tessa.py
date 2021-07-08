@@ -24,7 +24,7 @@ def create_folders():
     :return: None
     """
     path_file = os.path.dirname(os.path.abspath(__file__))
-    paths = ['tmp', 'results']
+    paths = ['/tmp', '/results']
     for p in paths:
         p = path_file + p
         if not os.path.exists(p):
