@@ -146,7 +146,10 @@ class SeparateModel(VAEBaseModel):
 		num_seq_labels = len(aa_to_id)
 		if self.conditional is not None:
 			num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
-			cond_dim = 20  # TODO maybe make it a hyperparam
+			try:
+				cond_dim = params_additional['c_embedding_dim']
+			except:
+				cond_dim = 20
 		else:
 			num_conditional_labels = 0
 			cond_dim = 0

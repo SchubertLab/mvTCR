@@ -168,8 +168,10 @@ if not os.path.exists(f'../optuna/{name}'):
 storage_location = f'../optuna/{name}/state.db'
 storage_name = f'sqlite:///{storage_location}'
 if os.path.exists(storage_location) and not args.resume:  # if not resume
-	print('Backup previous experiment database')
-	os.rename(storage_location, f'../optuna/{name}/state_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup.db')
+	print('Backup previous experiment database and models')
+	os.rename(f'../optuna/{name}', f'../optuna/{name}_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup')
+	if not os.path.exists(f'../optuna/{name}'):
+		os.makedirs(f'../optuna/{name}')
 
 sampler = optuna.samplers.TPESampler(seed=random_seed)  # Make the sampler behave in a deterministic way.
 study = optuna.create_study(study_name=name, sampler=sampler, storage=storage_name, direction='minimize', load_if_exists=args.resume)

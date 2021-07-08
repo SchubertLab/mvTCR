@@ -261,7 +261,8 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False, condition
         batch_norm=params['batch_norm'],
         shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
         gene_layers=[],  # [] or list of str for layer keys of each dataset
-        seq_keys=[],  # [] or list of str for seq keys of each dataset
+        seq_keys=[],  # [] or list of str for seq keys of each dataset,
+        params_additional=params['params_additional'] if 'params_additional' in params else None,
         conditional=conditional
     )
 
