@@ -12,12 +12,23 @@ import pandas as pd
 import numpy as np
 import json
 import shutil
+import argparse
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report
 
-os.environ['R_HOME'] = 'C:/Users/felix.drost/Anaconda3/envs/tessa/Lib/R'
-import rpy2.robjects as rob
+
+def create_folders():
+    """
+    Create the base folders to store tmps and results
+    :return: None
+    """
+    path_file = os.path.dirname(os.path.abspath(__file__))
+    paths = ['tmp', 'results']
+    for p in paths:
+        p = path_file + p
+        if not os.path.exists(p):
+            os.mkdir(p)
 
 
 def run_tessa(dir_in, dir_out):
@@ -189,4 +200,16 @@ def run_evaluation(donor):
 
 
 if __name__ == '__main__':
-    run_evaluation('test')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--path_env', type=str, default='C:/Users/felix.drost/Anaconda3/envs/tessa/Lib/R')
+    parser.add_argument('--donor', type=str, default='test')
+    args = parser.parse_args()
+
+    path_env_r = args.path_env
+    donor_tag = args.donor
+
+    os.environ['R_HOME'] = path_env_r
+    import rpy2.robjects as rob
+
+    create_folders()
+    run_evaluation(donor_tag)
