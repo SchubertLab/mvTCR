@@ -110,6 +110,11 @@ class VAEBaseModel(BaseModel, ABC):
 
 		self.params_additional = params_additional
 
+		if 'tcr_annealing' in params_additional:
+			self.tcr_annealing = params_additional['tcr_annealing']
+		else:
+			self.tcr_annealing = False
+
 	def train(self,
 			  experiment_name='example',
 			  n_iters=None,
@@ -259,7 +264,8 @@ class VAEBaseModel(BaseModel, ABC):
 			print(f'Continue training from epoch {self.epoch}')
 		pbar = tqdm(range(self.epoch, n_epochs + 1), 'Epoch: ')
 
-		# for e in tqdm(range(self.epoch, n_epochs + 1), 'Epoch: '):
+		init_tcr_loss_weight = loss_weights[1]
+
 		for e in pbar:
 			self.epoch = e
 			# TRAIN LOOP
@@ -298,6 +304,11 @@ class VAEBaseModel(BaseModel, ABC):
 				else:
 					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
 					z = mu  # make z deterministic by using the mean
+
+				if self.tcr_annealing:
+					loss_weights[1] = self.calculate_tcr_annealing(init_tcr_loss_weight, n_epochs, e)
+					if comet is not None:
+						comet.log_metric('tcr_loss_weight', loss_weights[1])
 
 				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights,
 																 scRNA_criterion, TCR_criterion, size_factor)
@@ -439,13 +450,34 @@ class VAEBaseModel(BaseModel, ABC):
 					TCR_loss_val_total = torch.stack(TCR_loss_val_total).mean().item()
 					KLD_loss_val_total = torch.stack(KLD_loss_val_total).mean().item()
 					cls_loss_val_total = torch.stack(cls_loss_val_total).mean().item()
-					if loss_val_total < self.best_loss:
+
+					# Only for TCR annealing. Undo the loss weighting, and multiply TCR loss by 0.1 to account for different scales of RNA and TCR loss
+					if (e > n_epochs / 2 and self.tcr_annealing) or not self.tcr_annealing:
+						unweighted_rna_loss = scRNA_loss_val_total / loss_weights[0]
+						unweighted_tcr_loss = TCR_loss_val_total / loss_weights[1]
+						unweighted_rec_loss = unweighted_rna_loss + 0.1 * unweighted_tcr_loss
+						if comet is not None:
+							comet.log_metrics({'Val unweighted RNA Loss': unweighted_rna_loss,
+											   'Val unweighted TCR Loss': unweighted_tcr_loss,
+											   'Val unweighted total Loss': unweighted_rec_loss},
+											  step=int(e * epoch2step), epoch=e)
+					else:
+						unweighted_rec_loss = 9999999999999
+
+					if (loss_val_total < self.best_loss) and not self.tcr_annealing:
 						self.best_loss = loss_val_total
 						self.save(os.path.join(save_path, f'{experiment_name}_best_rec_model.pt'))
 						no_improvements = 0
-					# KL warmup periods is grace period
-					elif e > kl_annealing_epochs:
+					elif (unweighted_rec_loss < self.best_loss) and self.tcr_annealing and (e > n_epochs / 2):
+						self.best_loss = unweighted_rec_loss
+						self.save(os.path.join(save_path, f'{experiment_name}_best_rec_model.pt'))
+						no_improvements = 0
+					else:
 						no_improvements += validate_every
+
+					# If TCR training due to TCR annealing didn't start yet or if KL warmup period didn't finish yet, reset the no_improvement counter
+					if (self.tcr_annealing and e <= n_epochs / 2) or e < kl_annealing_epochs:
+						no_improvements = 0
 
 					if self.model_type == 'supervised' and comet is not None:
 						labels_gt_list = torch.cat(labels_gt_list).cpu().numpy()
@@ -775,3 +807,9 @@ class VAEBaseModel(BaseModel, ABC):
 			raise NotImplementedError(f'{rec_loss_type} is not implemented')
 
 		return scRNA_loss_unweighted
+
+	def calculate_tcr_annealing(self, init_tcr_loss_weight, n_epochs, e):
+		if e > n_epochs / 2:
+			return init_tcr_loss_weight * (e - n_epochs / 2) / (n_epochs / 2)
+		else:
+			return 0.0
