@@ -157,10 +157,12 @@ class PoEModel(VAEBaseModel):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None
+				 conditional=None,
+				 rna_priority=False
 				 ):
 		super(PoEModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
+									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
+									   rna_priority=rna_priority)
 
 		self.poe = True
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]

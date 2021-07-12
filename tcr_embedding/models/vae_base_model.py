@@ -44,7 +44,8 @@ class VAEBaseModel(BaseModel, ABC):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None
+				 conditional=None,
+				 rna_priority=None,
 				 ):
 		"""
 		VAE Base Model, used for both single and joint models
@@ -64,6 +65,7 @@ class VAEBaseModel(BaseModel, ABC):
 		:param gene_layers: list of str or [], keys for scRNA data, i.e. adata.layer[gene_layers[i]] for each dataset i, or empty to use adata.X
 		:param seq_keys: list of str or [], keys for TCR data, i.e. adata.obsm[seq_keys[i]] for each dataset i, or empty to use adata.obsm['tcr_seq']
 		:param conditional: str or None, if None a normal VAE is used, if str then the str determines the adata.obsm[conditional] as conditioning variable
+		:param rna_priority: int or None, if not None, the TCR module is only trained every n-th iteration
 		"""
 
 		assert len(adatas) == len(names)
@@ -79,6 +81,7 @@ class VAEBaseModel(BaseModel, ABC):
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
 		self.conditional = conditional
+		self.rna_priority = rna_priority
 
 		if 'max_tcr_length' not in seq_model_hyperparams:
 			seq_model_hyperparams['max_tcr_length'] = self.get_max_tcr_length()
