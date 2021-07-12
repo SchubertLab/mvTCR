@@ -269,6 +269,8 @@ class VAEBaseModel(BaseModel, ABC):
 
 		init_tcr_loss_weight = loss_weights[1]
 
+		iteration = torch.tensor(0)
+
 		for e in pbar:
 			self.epoch = e
 			# TRAIN LOOP
@@ -286,12 +288,15 @@ class VAEBaseModel(BaseModel, ABC):
 			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels, conditional in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
+				iteration = iteration.to(device)
+
 				if self.conditional is not None:
 					conditional = conditional.to(device)
 				else:
 					conditional = None
 
-				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, iteration)
+				iteration += 1
 
 				if self.moe:
 					KLD_loss = 0.5 * loss_weights[2] * \
@@ -338,6 +343,7 @@ class VAEBaseModel(BaseModel, ABC):
 
 				self.optimizer.zero_grad()
 				loss.backward()
+				# todo add scrna priority here
 				self.optimizer.step()
 
 				loss_train_total.append(loss.detach())

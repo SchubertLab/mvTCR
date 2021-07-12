@@ -15,7 +15,8 @@ def none_model(hyperparams, hdim, xdim):
 
 class SingleModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
-				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim,
+				 cond_input=False):
 		super(SingleModelTorch, self).__init__()
 
 		assert scRNA_model_arch != 'None' or seq_model_arch != 'None', 'At least scRNA- or seq-model needs to be not None'
@@ -52,13 +53,14 @@ class SingleModelTorch(nn.Module):
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None):
+	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None, iteration=None):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
 		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, num_seq_labels]
 		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
 		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
+		:param iteration: dummy parameter needed to keep the interface between different models
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 
@@ -128,7 +130,7 @@ class SingleModel(VAEBaseModel):
 				 seq_keys=[],
 				 params_additional=None,
 				 conditional=None,
-				 rna_priority=False
+				 rna_priority=False,
 				 ):
 
 		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,

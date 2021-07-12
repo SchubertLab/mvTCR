@@ -60,7 +60,8 @@ def objective(trial):
 	adata = sc.read_h5ad('../data/Haniffa/v3_conditional.h5ad')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
-	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov, conditional=args.conditional)
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov,
+					   conditional=args.conditional, rna_priority=args.rna_priority)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -149,6 +150,7 @@ parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--balanced_sampling', type=str, default=None)
 parser.add_argument('--conditional', type=str, default=None)
 parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
+parser.add_argument('--rna_priority', type=int, default=None, help='If is not none, TCR is only trained every n iter')
 args = parser.parse_args()
 
 if args.name is not None:
@@ -160,7 +162,10 @@ else:
 	init_params = importlib.import_module(f'haniffa_{args.model.lower()}').init_params
 	name = f'haniffa_{args.model}{args.suffix}'
 
-name = name + ('_CoV' if args.use_cov else '') + (f'_cond_{args.conditional}' if args.conditional is not None else '')
+name = name + ('_CoV' if args.use_cov else '')
+name += (f'_cond_{args.conditional}' if args.conditional is not None else '')
+name += (f'_RnaPriority_{args.RNA_priority}' if args.RNA_priority is not None else '')
+
 if not os.path.exists(f'../optuna/{name}'):
 	os.makedirs(f'../optuna/{name}')
 
