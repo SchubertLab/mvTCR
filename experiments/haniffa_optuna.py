@@ -164,7 +164,7 @@ else:
 
 name = name + ('_CoV' if args.use_cov else '')
 name += (f'_cond_{args.conditional}' if args.conditional is not None else '')
-name += (f'_RnaPriority_{args.RNA_priority}' if args.RNA_priority is not None else '')
+name += (f'_RnaPriority_{args.rna_priority}' if args.rna_priority is not None else '')
 
 if not os.path.exists(f'../optuna/{name}'):
 	os.makedirs(f'../optuna/{name}')
