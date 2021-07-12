@@ -21,3 +21,6 @@ optuna
 *.db
 *.psd
 /experiments/figures
+baseline/TESSA/
+baseline/tmp
+baseline/results
