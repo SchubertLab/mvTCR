@@ -69,7 +69,9 @@ class SeparateModelTorch(nn.Module):
 		beta_seq = tcr_seq[:, tcr_seq.shape[1]//2:]
 		beta_len = tcr_len[:, 1]
 
-		if self.rna_priority is None:
+		if iteration == -99:
+			do_grad = False
+		elif self.rna_priority is None:
 			do_grad = True
 		elif iteration % self.rna_priority == 0:
 			do_grad = True

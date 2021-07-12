@@ -408,7 +408,7 @@ class VAEBaseModel(BaseModel, ABC):
 						else:
 							conditional = None
 
-						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
+						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, -99)
 
 						if self.moe:
 							KLD_loss = 0.5 * loss_weights[2] * \
@@ -659,7 +659,7 @@ class VAEBaseModel(BaseModel, ABC):
 					conditional = conditional.to(device)
 				else:
 					conditional = None
-				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, -99)
 				if return_mean:
 					z = mu
 
