@@ -27,7 +27,6 @@ random.seed(random_seed)
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd
-
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -155,7 +154,7 @@ args = parser.parse_args()
 if args.name is not None:
 	suggest_params = importlib.import_module(f'{args.name}').suggest_params
 	init_params = importlib.import_module(f'{args.name}').init_params
-	name = f'{args.name}'
+	name = f'{args.name}{args.suffix}'
 else:
 	suggest_params = importlib.import_module(f'haniffa_{args.model.lower()}').suggest_params
 	init_params = importlib.import_module(f'haniffa_{args.model.lower()}').init_params

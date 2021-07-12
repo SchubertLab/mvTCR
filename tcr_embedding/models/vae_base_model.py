@@ -110,10 +110,10 @@ class VAEBaseModel(BaseModel, ABC):
 
 		self.params_additional = params_additional
 
-		if 'tcr_annealing' in params_additional:
-			self.tcr_annealing = params_additional['tcr_annealing']
-		else:
-			self.tcr_annealing = False
+		self.tcr_annealing = False
+		if type(params_additional) == dict:
+			if 'tcr_annealing' in params_additional:
+				self.tcr_annealing = params_additional['tcr_annealing']
 
 	def train(self,
 			  experiment_name='example',
@@ -452,7 +452,7 @@ class VAEBaseModel(BaseModel, ABC):
 					cls_loss_val_total = torch.stack(cls_loss_val_total).mean().item()
 
 					# Only for TCR annealing. Undo the loss weighting, and multiply TCR loss by 0.1 to account for different scales of RNA and TCR loss
-					if (e > n_epochs / 2 and self.tcr_annealing) or not self.tcr_annealing:
+					if (e > n_epochs / 2 and self.tcr_annealing):
 						unweighted_rna_loss = scRNA_loss_val_total / loss_weights[0]
 						unweighted_tcr_loss = TCR_loss_val_total / loss_weights[1]
 						unweighted_rec_loss = unweighted_rna_loss + 0.1 * unweighted_tcr_loss

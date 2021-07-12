@@ -159,7 +159,6 @@ class SeparateModel(VAEBaseModel):
 										num_conditional_labels, cond_dim)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
-
 		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
 			mask = torch.ones_like(tcr_seq).bool()
 			mask[:, [0, mask.shape[1] // 2]] = False
@@ -170,7 +169,7 @@ class SeparateModel(VAEBaseModel):
 
 		if scRNA_pred is not None:
 			scRNA_loss = loss_weights[0] * self.calc_scRNA_rec_loss(scRNA_pred, scRNA, scRNA_criterion, size_factor, self.losses[0])
-			loss += scRNA_loss
+			loss = loss + scRNA_loss
 		else:
 			scRNA_loss = torch.FloatTensor([0])
 
