@@ -8,14 +8,8 @@ To reproduce create a new environment based on the file 'baseline/requirement_te
 Additionally, you must install the following R packages to the R distribution in your environment: todo
 """
 import os
-import pandas as pd
-import numpy as np
-import json
 import shutil
 import argparse
-
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import classification_report
 
 
 def create_folders():
@@ -80,85 +74,7 @@ def run_briseis(dir_in, dir_out):
     os.system(command_ae)
 
 
-def get_labels(donor):
-    """
-    Extract the labels from the TCR file
-    :param donor: id of the 10x donor
-    :return: list [num_cells], list [num_cells] representing the binding labels for atlas and query set
-    """
-    path_file = os.path.dirname(os.path.abspath(__file__))
-    path_labels = path_file + f'/../data/tessa/10x/{donor}/'
-    df_atlas = pd.read_csv(path_labels+'tcrs_atlas.csv')
-    df_query = pd.read_csv(path_labels+'tcrs_query.csv')
-    return df_atlas['binding_name'].tolist(), df_query['binding_name'].tolist()
-
-
-def get_tessa_weights(base_dir):
-    """
-    Load the b-values from the result RData
-    :param base_dir: path to the base folder of the experiment
-    :return: numpy array [3] giving the b-weights
-    """
-    rob.r['load'](f'{base_dir}/res/tessa_final.RData')
-    b = rob.r['tessa_results'][0]
-    b = np.array(b)
-    return b
-
-
-def get_tessa_unweighted_distances(base_dir):
-    """
-    Extract the Briseis encoding from file
-    :param base_dir: path to the base folder of the experiment
-    :return: numpy array [num_cells, 30] giving the embedding space by Briseis
-    """
-    unweighted_dist = pd.read_csv(f'{base_dir}/tessa_tcr_embedding.csv', index_col=0)
-    unweighted_dist = unweighted_dist.values
-    return unweighted_dist
-
-
-def get_weighted_distances(unweighted_dist, b):
-    """
-    Calculates the weigthed distance
-    :param unweighted_dist: numpy array [num_cells, 30] giving the TCR embedding
-    :param b: numpy array [30] giving the position weights
-    :return: numpy array [num_cells, 30] giving the weighted embedding
-    """
-    weighted_dist = unweighted_dist * b
-    return weighted_dist
-
-
-def get_knn_classification(data_atlas, data_query, labels_atlas, labels_query, num_neighbors=5, weights='distance'):
-    """
-    Evaluates with kNN based on scikit-learn
-    :param data_atlas: numpy array (num_cells, hidden_size) embeddings of the atlas data
-    :param data_query: numpy array (num_cells, hidden_size) embeddings of the query data
-    :param labels_atlas: list (num_cells) labels of the atlas data
-    :param labels_query: list (num_cells) labels of the query data
-    :param num_neighbors: amount of neighbors used for kNN
-    :param weights: kNN weighting,
-    :return:
-    """
-
-    clf = KNeighborsClassifier(num_neighbors, weights)
-    clf.fit(data_atlas, labels_atlas)
-
-    labels_predicted = clf.predict(data_query)
-    report = classification_report(labels_query, labels_predicted, output_dict=True)
-    return report
-
-
-def save_dict(path, dictionary):
-    """
-    Saves a dict to a json file
-    :param path: desired output path
-    :param dictionary: dict to be saved
-    :return: saves to file
-    """
-    with open(path, 'w') as fp:
-        json.dump(dictionary, fp)
-
-
-def run_evaluation(donor):
+def run_model(donor):
     """
     Runs the evaluation of TESSA for the specified donor
     :param donor: int, donor id
@@ -185,21 +101,6 @@ def run_evaluation(donor):
     print('Run Briseis')
     run_briseis(dir_in, dir_out_query)
 
-    labels_atlas, labels_query = get_labels(donor)
-
-    print('Calculate Briseis Performance')
-    embedding_atlas = get_tessa_unweighted_distances(dir_out_atlas)
-    embedding_query = get_tessa_unweighted_distances(dir_out_query)
-    unweighted_results = get_knn_classification(embedding_atlas, embedding_query, labels_atlas, labels_query)
-    save_dict(path_file+f'/results/{donor}_unweighted.json', unweighted_results)
-
-    print('Calculate Tessa Performance')
-    b = get_tessa_weights(dir_out_atlas)
-    embedding_query = get_weighted_distances(embedding_query, b)
-    embedding_atlas = get_weighted_distances(embedding_atlas, b)
-    weighted_results = get_knn_classification(embedding_atlas, embedding_query, labels_atlas, labels_query)
-    save_dict(path_file + f'/results/{donor}_weighted.json', weighted_results)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -210,8 +111,5 @@ if __name__ == '__main__':
     path_env_r = args.path_env
     donor_tag = args.donor
 
-    os.environ['R_HOME'] = path_env_r
-    import rpy2.robjects as rob
-
     create_folders()
-    run_evaluation(donor_tag)
+    run_model(donor_tag)
