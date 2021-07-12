@@ -4,6 +4,7 @@ import warnings
 import scanpy as sc
 import os
 import yaml
+import argparse
 
 from datetime import datetime
 
@@ -11,6 +12,21 @@ import ray
 from ray import tune
 
 import tcr_embedding.models as models
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
+    parser.add_argument('--model', type=str, default='single_scRNA')
+    parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--n_epochs', type=int, default=10)
+    parser.add_argument('--early_stop', type=int, default=100)
+    parser.add_argument('--num_samples', type=int, default=100)
+    parser.add_argument('--balanced_sampling', type=str, default=None)
+    parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2', '3', '4'])
+    parser.add_argument('--without_non_binder', action='store_true')
+    arguments = parser.parse_args()
+    return arguments
 
 
 def load_data(source='10x'):
@@ -28,7 +44,7 @@ def load_data(source='10x'):
     elif source == 'bcc':
         path_source = 'BCC/06_bcc_highly_var_5000.h5ad'
     elif source == 'covid':
-        raise NotImplementedError
+        path_source = 'Covid/04_covid_highly_var_5000.h5ad'
     else:
         path_source = source
     path_file = os.path.join(path_base, path_source)
@@ -182,7 +198,7 @@ def initialize_comet(params_hpo, params_fixed):
         return None
 
     current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
-    experiment_name = params_fixed['name']  # + '_' + current_datetime
+    experiment_name = params_fixed['name'] + '_' + current_datetime
 
     path_key = os.path.join(os.path.dirname(__file__), '../comet_ml_key/API_key.txt')
     with open(path_key) as f:
