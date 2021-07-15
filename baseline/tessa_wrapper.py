@@ -74,14 +74,15 @@ def run_briseis(dir_in, dir_out):
     os.system(command_ae)
 
 
-def run_model(donor):
+def run_model_atlas_query(donor, dataset='10x'):
     """
-    Runs the evaluation of TESSA for the specified donor
+    Runs the evaluation of TESSA for the specified donor for a query and an atlas dataset
     :param donor: int, donor id
+    :param dataset: str, folder name of the dataset (e.g. '10x')
     :return: saves results and summary
     """
     path_file = os.path.dirname(os.path.abspath(__file__))
-    dir_in = path_file + f'/../data/tessa/10x/{donor}/'
+    dir_in = path_file + f'/../data/tessa/{dataset}/{donor}/'
     dir_out_atlas = path_file + f'/tmp/{donor}/atlas'
     dir_out_query = path_file + f'/tmp/{donor}/query'
 
@@ -102,14 +103,43 @@ def run_model(donor):
     run_briseis(dir_in, dir_out_query)
 
 
+def run_model_single(donor, dataset='10x'):
+    """
+    Runs the evaluation of TESSA for the specified donor for the whole dataset
+    :param donor: int, donor id
+    :param dataset: str, folder name of the dataset (e.g. '10x')
+    :return: saves results and summary
+    """
+    path_file = os.path.dirname(os.path.abspath(__file__))
+    dir_in = path_file + f'/../data/tessa/{dataset}/{donor}/'
+    dir_out_atlas = path_file + f'/tmp/{donor}/atlas'
+
+    if not os.path.exists(path_file + f'/tmp/{donor}/'):
+        os.mkdir(path_file + f'/tmp/{donor}/')
+    if not os.path.exists(dir_out_atlas):
+        os.mkdir(dir_out_atlas)
+
+    if os.path.exists(path_file + f'/tmp/{donor}/atlas/res'):
+        shutil.rmtree(path_file + f'/tmp/{donor}/atlas/res')
+    print('Run TESSA')
+    run_tessa(dir_in, dir_out_atlas)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_env', type=str, default='C:/Users/felix.drost/Anaconda3/envs/tessa/Lib/R')
     parser.add_argument('--donor', type=str, default='test')
+    parser.add_argument('--dataset', type=str, default='10x')
+    parser.add_argument('--single', action='store_true', help='Run on single dataset instead of query + atlas')
     args = parser.parse_args()
 
     path_env_r = args.path_env
     donor_tag = args.donor
+    dataset_name = args.dataset
+    do_single = args.single
 
     create_folders()
-    run_model(donor_tag)
+    if args.single:
+        run_model_single(donor=donor_tag, dataset=dataset_name)
+    else:
+        run_model_atlas_query(donor_tag, dataset=dataset_name)
