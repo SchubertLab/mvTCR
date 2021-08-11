@@ -44,8 +44,7 @@ class VAEBaseModel(BaseModel, ABC):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None,
-				 rna_priority=None,
+				 conditional=None
 				 ):
 		"""
 		VAE Base Model, used for both single and joint models
@@ -81,7 +80,6 @@ class VAEBaseModel(BaseModel, ABC):
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
 		self.conditional = conditional
-		self.rna_priority = rna_priority
 
 		if 'max_tcr_length' not in seq_model_hyperparams:
 			seq_model_hyperparams['max_tcr_length'] = self.get_max_tcr_length()
@@ -269,8 +267,6 @@ class VAEBaseModel(BaseModel, ABC):
 
 		init_tcr_loss_weight = loss_weights[1]
 
-		iteration = torch.tensor(0)
-
 		for e in pbar:
 			self.epoch = e
 			# TRAIN LOOP
@@ -288,15 +284,13 @@ class VAEBaseModel(BaseModel, ABC):
 			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels, conditional in train_dataloader:
 				scRNA = scRNA.to(device)
 				tcr_seq = tcr_seq.to(device)
-				iteration = iteration.to(device)
 
 				if self.conditional is not None:
 					conditional = conditional.to(device)
 				else:
 					conditional = None
 
-				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, iteration)
-				iteration += 1
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
 
 				if self.moe:
 					KLD_loss = 0.5 * loss_weights[2] * \
@@ -408,7 +402,7 @@ class VAEBaseModel(BaseModel, ABC):
 						else:
 							conditional = None
 
-						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, -99)
+						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
 
 						if self.moe:
 							KLD_loss = 0.5 * loss_weights[2] * \
@@ -659,7 +653,7 @@ class VAEBaseModel(BaseModel, ABC):
 					conditional = conditional.to(device)
 				else:
 					conditional = None
-				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional, -99)
+				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
 				if return_mean:
 					z = mu
 

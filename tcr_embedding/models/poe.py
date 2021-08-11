@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
 from .cnn import CNNEncoder, CNNDecoder
 from .bigru import BiGRUEncoder, BiGRUDecoder
@@ -14,8 +15,7 @@ from tcr_embedding.datasets.scdataset import TCRDataset
 
 class PoEModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
-				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False,
-				 rna_priority=None):
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
 		super(PoEModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
@@ -47,16 +47,13 @@ class PoEModelTorch(nn.Module):
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-		self.rna_priority = rna_priority
-
-	def forward(self, rna, tcr, tcr_len, conditional=None, iteration=None):
+	def forward(self, rna, tcr, tcr_len, conditional=None):
 		"""
 		Forward pass of autoencoder
 		:param rna: torch.Tensor shape=[batch_size, num_genes]
 		:param tcr: torch.Tensor shape=[batch_size, seq_len, feature_dim]
 		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
 		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
-		:param iteration: idx of the current epoch, needed for rna priority
 		:return:
 			z: list of sampled latent variable zs. z = [z_rna, z_tcr, z_joint]
 			mu: list of predicted means mu. mu = [mu_rna, mu_tcr, mu_joint]
@@ -73,21 +70,11 @@ class PoEModelTorch(nn.Module):
 		beta_seq = tcr[:, tcr.shape[1] // 2:]
 		beta_len = tcr_len[:, 1]
 
-		if iteration == -99:
-			do_grad = False
-		elif self.rna_priority is None:
-			do_grad = True
-		elif iteration % self.rna_priority == 0:
-			do_grad = True
-		else:
-			do_grad = False
-
-		with torch.set_grad_enabled(do_grad):
-			h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
-			h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
-			h_tcr = torch.cat([h_alpha, h_beta], dim=-1)  # shape=[batch_size, hdim]
-			if conditional is not None and self.cond_input:
-				h_tcr = torch.cat([h_tcr, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
+		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
+		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
+		h_tcr = torch.cat([h_alpha, h_beta], dim=-1)  # shape=[batch_size, hdim]
+		if conditional is not None and self.cond_input:
+			h_tcr = torch.cat([h_tcr, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
 
 		# Encode RNA
 		h_rna = self.rna_encoder(rna)  # shape=[batch_size, hdim]
@@ -99,10 +86,10 @@ class PoEModelTorch(nn.Module):
 		mu_rna, logvar_rna = z_rna_[:, :z_rna_.shape[1]//2], z_rna_[:, z_rna_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z_rna = self.reparameterize(mu_rna, logvar_rna)  # shape=[batch_size, zdim]
 
-		with torch.set_grad_enabled(do_grad):
-			z_tcr_ = self.tcr_vae_encoder(h_tcr)  # shape=[batch_size, zdim*2]
-			mu_tcr, logvar_tcr = z_tcr_[:, :z_tcr_.shape[1]//2], z_tcr_[:, z_tcr_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
-			z_tcr = self.reparameterize(mu_tcr, logvar_tcr)  # shape=[batch_size, zdim]
+
+		z_tcr_ = self.tcr_vae_encoder(h_tcr)  # shape=[batch_size, zdim*2]
+		mu_tcr, logvar_tcr = z_tcr_[:, :z_tcr_.shape[1]//2], z_tcr_[:, z_tcr_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		z_tcr = self.reparameterize(mu_tcr, logvar_tcr)  # shape=[batch_size, zdim]
 
 		# Predict joint latent space using PoE
 		mu_joint, logvar_joint = self.product_of_experts(mu_rna, mu_tcr, logvar_rna, logvar_tcr)
@@ -120,15 +107,14 @@ class PoEModelTorch(nn.Module):
 			f_rna = self.rna_vae_decoder(z_)
 			rna_pred.append(self.rna_decoder(f_rna))
 		tcr_pred = []
-		with torch.set_grad_enabled(do_grad):
-			for z_ in [z_tcr, z_joint]:
-				if conditional is not None:
-					z_ = torch.cat([z_, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
-				f_tcr = self.tcr_vae_decoder(z_)
-				alpha_pred = self.alpha_decoder(f_tcr, alpha_seq)
-				beta_pred = self.beta_decoder(f_tcr, beta_seq)
+		for z_ in [z_tcr, z_joint]:
+			if conditional is not None:
+				z_ = torch.cat([z_, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
+			f_tcr = self.tcr_vae_decoder(z_)
+			alpha_pred = self.alpha_decoder(f_tcr, alpha_seq)
+			beta_pred = self.beta_decoder(f_tcr, beta_seq)
 
-				tcr_pred.append(torch.cat([alpha_pred, beta_pred], dim=1))
+			tcr_pred.append(torch.cat([alpha_pred, beta_pred], dim=1))
 
 		return z, mu, logvar, rna_pred, tcr_pred
 
@@ -174,11 +160,9 @@ class PoEModel(VAEBaseModel):
 				 seq_keys=[],
 				 params_additional=None,
 				 conditional=None,
-				 rna_priority=None
 				 ):
 		super(PoEModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
-									   rna_priority=rna_priority)
+									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
 
 		self.poe = True
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
@@ -197,7 +181,7 @@ class PoEModel(VAEBaseModel):
 
 		self.model = PoEModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 								   seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-								   num_conditional_labels, cond_dim, rna_priority=rna_priority)
+								   num_conditional_labels, cond_dim)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		''' Evaluate same-modality and joint reconstruction '''

@@ -17,8 +17,7 @@ def none_model(hyperparams, hdim, xdim):
 
 class SeparateModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
-				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False,
-				 rna_priority=None):
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
 		super(SeparateModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
@@ -51,16 +50,14 @@ class SeparateModelTorch(nn.Module):
 
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
-		self.rna_priority = rna_priority
 
-	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None, iteration=None):
+	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
 		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, num_seq_labels]
 		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
 		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
-		:param iteration: torch.Tensor shape=[1] indicating the current iteration
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 		alpha_seq = tcr_seq[:, :tcr_seq.shape[1]//2]
@@ -69,20 +66,8 @@ class SeparateModelTorch(nn.Module):
 		beta_seq = tcr_seq[:, tcr_seq.shape[1]//2:]
 		beta_len = tcr_len[:, 1]
 
-		if iteration == -99:
-			do_grad = False
-		elif self.rna_priority is None:
-			do_grad = True
-		elif iteration % self.rna_priority == 0:
-			do_grad = True
-		else:
-			do_grad = False
-		print(self.rna_priority)
-		print(f'iteration {iteration}, do_grad {do_grad}')
-
-		with torch.set_grad_enabled(do_grad):
-			h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
-			h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
+		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
+		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
 
 		if conditional is not None:  # more efficient than doing two concatenations
 			cond_emb_vec = self.cond_emb(conditional)
@@ -113,9 +98,8 @@ class SeparateModelTorch(nn.Module):
 		else:
 			scRNA_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
 
-		with torch.set_grad_enabled(do_grad):
-			alpha_seq_pred = self.alpha_decoder(joint_dec_feature, alpha_seq)
-			beta_seq_pred = self.beta_decoder(joint_dec_feature, beta_seq)
+		alpha_seq_pred = self.alpha_decoder(joint_dec_feature, alpha_seq)
+		beta_seq_pred = self.beta_decoder(joint_dec_feature, beta_seq)
 
 		tcr_seq_pred = torch.cat([alpha_seq_pred, beta_seq_pred], dim=1)  # cat along sequence dim
 
@@ -151,12 +135,10 @@ class SeparateModel(VAEBaseModel):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None,
-				 rna_priority=None,
+				 conditional=None
 				 ):
 		super(SeparateModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
-											rna_priority=rna_priority)
+										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
 
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
 
@@ -174,7 +156,7 @@ class SeparateModel(VAEBaseModel):
 
 		self.model = SeparateModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
 										seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										num_conditional_labels, cond_dim, rna_priority=rna_priority)
+										num_conditional_labels, cond_dim)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
 		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2

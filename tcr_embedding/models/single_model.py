@@ -53,14 +53,13 @@ class SingleModelTorch(nn.Module):
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None, iteration=None):
+	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
 		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, num_seq_labels]
 		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
 		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
-		:param iteration: dummy parameter needed to keep the interface between different models
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 
@@ -130,13 +129,11 @@ class SingleModel(VAEBaseModel):
 				 seq_keys=[],
 				 params_additional=None,
 				 conditional=None,
-				 rna_priority=False,
 				 ):
 
 		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,
 										  scRNA_model_hyperparams, zdim, hdim, activation, dropout, batch_norm,
-										  shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
-										  rna_priority=rna_priority)
+										  shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
 
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)

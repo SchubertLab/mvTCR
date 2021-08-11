@@ -3,7 +3,7 @@ from comet_ml import Experiment
 
 import tcr_embedding.utils_training as helper
 from tcr_embedding.models.scGen import PertubationPredictor
-from tcr_embedding.models.joint_model import JointModel
+from tcr_embedding.models.separate_model import SeparateModel
 import tcr_embedding.utils as utils
 
 import yaml
@@ -58,6 +58,7 @@ def run_evaluation(model, data, params_scgen):
     evaluator = PertubationPredictor(model, data=data, verbosity=0)
     result = evaluator.evaluate_pertubation(pertubation=params_scgen['pertubation'], splitting_criteria={'set': 'val'},
                                             per_column=params_scgen['per_column'], indicator=params_scgen['indicator'])
+    print(result)
     return result
 
 
@@ -106,7 +107,7 @@ if __name__ == '__main__':
 
         'n_epochs': 5,
         'early_stop': 100,
-        'validate_every': 5,
+        'validate_every': 1,
         'num_checkpoints': 20,
 
         'tune': None,
@@ -117,4 +118,7 @@ if __name__ == '__main__':
     with open("../config/transformer.yaml", 'r') as stream:
         hpo_params = yaml.safe_load(stream)
 
-    training_loop(hpo_params, sc_gen_params, fixed_params, JointModel, comet=None)
+    with open('../comet_ml_key/API_key.txt') as f:
+        COMET_ML_KEY = f.read()
+    experiment = Experiment(api_key=COMET_ML_KEY, workspace='bcc', project_name='bcc_test')
+    training_loop(hpo_params, sc_gen_params, fixed_params, SeparateModel, comet=experiment)
