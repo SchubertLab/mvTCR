@@ -302,6 +302,10 @@ class VAEBaseModel(BaseModel, ABC):
 							   (KL_criterion(mu[0], logvar[0]) +
 								KL_criterion(mu[1], logvar[1]) +
 								KL_criterion(mu[2], logvar[2]))
+					# possible constrain on joint space to resemble more the TCR space
+					if len(loss_weights) == 4:
+						kld_rna_joint = KL_criterion(mu[0], logvar[0], mu[2], logvar[2])
+						KLD_loss += loss_weights[3] * kld_rna_joint
 					z = mu[2]  # use joint latent variable for further downstream tasks
 				else:
 					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
@@ -337,7 +341,6 @@ class VAEBaseModel(BaseModel, ABC):
 
 				self.optimizer.zero_grad()
 				loss.backward()
-				# todo add scrna priority here
 				self.optimizer.step()
 
 				loss_train_total.append(loss.detach())
