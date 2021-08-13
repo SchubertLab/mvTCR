@@ -11,9 +11,7 @@ class KLD(torch.nn.Module):
     def forward(self, mu, logvar, mu_2=None, logvar_2=None):
         if mu_2 is None or logvar_2 is None:
             kl = self.univariate_kl_loss(mu, logvar)
-            print('Unimodla')
         else:
-            print('RNA-joint')
             kl = self.general_kl_loss(mu, logvar, mu_2, logvar_2)
         if self.reduction == 'mean':
             kl = torch.mean(kl)
@@ -21,7 +19,6 @@ class KLD(torch.nn.Module):
             kl = torch.sum(kl)
         else:
             raise NotImplementedError(f'reduction method {self.reduction} is not implemented.')
-        print(kl)
         return kl
 
     def univariate_kl_loss(self, mu, logvar):
