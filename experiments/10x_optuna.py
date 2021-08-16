@@ -37,6 +37,9 @@ def objective(trial):
 	"""
 	params = suggest_params(trial)
 
+	if rna_kld_weight is not None:
+		params['loss_weights'].append(rna_kld_weight)
+
 	save_path = f'../optuna/{name}/trial_{trial.number}'
 	if not os.path.exists(save_path):
 		os.makedirs(save_path)
@@ -180,6 +183,7 @@ parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2'
 parser.add_argument('--without_non_binder', action='store_true')
 parser.add_argument('--conditional', type=str, default=None)
 parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
+parser.add_argument('--rna_weight', type=float, default=None)
 args = parser.parse_args()
 
 if args.name is not None:
@@ -192,6 +196,7 @@ else:
 	name = f'10x_{args.model}{args.suffix}'
 
 name = name + ('_CoV' if args.use_cov else '') + (f'_cond_{args.conditional}' if args.conditional is not None else '')
+rna_kld_weight = args.rna_weight
 
 if not os.path.exists(f'../optuna/{name}'):
 	os.makedirs(f'../optuna/{name}')
