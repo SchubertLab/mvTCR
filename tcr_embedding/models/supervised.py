@@ -1,17 +1,11 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, WeightedRandomSampler
-import os
 import numpy as np
-from tqdm import tqdm
-from collections import defaultdict
 
-from .joint_model import JointModel, JointModelTorch
-from .single_model import SingleModel, SingleModelTorch
-from .mlp import MLP
+from .joint_model import JointModelTorch
+from .single_model import SingleModelTorch
+from tcr_embedding.models.architectures.mlp import MLP
 from .vae_base_model import VAEBaseModel
-from .losses.kld import KLD
-from .losses.nb import NB
 from tcr_embedding.datasets.scdataset import TCRDataset
 
 

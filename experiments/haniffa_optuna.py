@@ -27,7 +27,6 @@ random.seed(random_seed)
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd
-
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -37,6 +36,9 @@ def objective(trial):
 	:param trial: Optuna Trial Object
 	"""
 	params = suggest_params(trial)
+
+	if rna_kld_weight is not None:
+		params['loss_weights'].append(rna_kld_weight)
 
 	save_path = f'../optuna/{name}/trial_{trial.number}'
 	if not os.path.exists(save_path):
@@ -56,12 +58,13 @@ def objective(trial):
 	if params['seq_model_arch'] == 'CNN':
 		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
+	experiment.log_parameters(vars(args))
 
-	adata = sc.read_h5ad('../data/Haniffa/v2_preprocessed.h5ad')
+	adata = sc.read_h5ad('../data/Haniffa/v3_conditional.h5ad')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
-	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov)
-
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='haniffa', use_cov=args.use_cov,
+					   conditional=args.conditional)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -90,7 +93,8 @@ def objective(trial):
 		comet=experiment
 	)
 
-	color_groups = ['clonotype', 'full_clustering', 'initial_clustering', 'Sex', 'Swab_result', 'Status', 'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome', 'Site']
+	color_groups = ['Site', 'patient_id', 'Sex', 'full_clustering', 'clonotype', 'initial_clustering', 'Swab_result',
+					'Status',  'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome']
 	if os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
 		# UMAP
 		print('UMAP for best reconstruction loss model on val')
@@ -147,27 +151,34 @@ parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--early_stop', type=int, default=100)
 parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--balanced_sampling', type=str, default=None)
+parser.add_argument('--conditional', type=str, default=None)
 parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
+parser.add_argument('--rna_weight', type=float, default=None)
 args = parser.parse_args()
 
 if args.name is not None:
 	suggest_params = importlib.import_module(f'{args.name}').suggest_params
 	init_params = importlib.import_module(f'{args.name}').init_params
-	name = f'{args.name}'
+	name = f'{args.name}{args.suffix}'
 else:
 	suggest_params = importlib.import_module(f'haniffa_{args.model.lower()}').suggest_params
 	init_params = importlib.import_module(f'haniffa_{args.model.lower()}').init_params
 	name = f'haniffa_{args.model}{args.suffix}'
 
 name = name + ('_CoV' if args.use_cov else '')
+name += (f'_cond_{args.conditional}' if args.conditional is not None else '')
+rna_kld_weight = args.rna_weight
+
 if not os.path.exists(f'../optuna/{name}'):
 	os.makedirs(f'../optuna/{name}')
 
 storage_location = f'../optuna/{name}/state.db'
 storage_name = f'sqlite:///{storage_location}'
 if os.path.exists(storage_location) and not args.resume:  # if not resume
-	print('Backup previous experiment database')
-	os.rename(storage_location, f'../optuna/{name}/state_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup.db')
+	print('Backup previous experiment database and models')
+	os.rename(f'../optuna/{name}', f'../optuna/{name}_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup')
+	if not os.path.exists(f'../optuna/{name}'):
+		os.makedirs(f'../optuna/{name}')
 
 sampler = optuna.samplers.TPESampler(seed=random_seed)  # Make the sampler behave in a deterministic way.
 study = optuna.create_study(study_name=name, sampler=sampler, storage=storage_name, direction='minimize', load_if_exists=args.resume)

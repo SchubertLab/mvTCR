@@ -240,7 +240,7 @@ def select_model_by_name(model_name):
     return init_model
 
 
-def init_model(params, model_type, adata, dataset_name, use_cov=False):
+def init_model(params, model_type, adata, dataset_name, use_cov=False, conditional=None):
     if model_type.lower() == 'rna':
         init_model_func = models.single_model.SingleModel
     elif model_type.lower() == 'poe':
@@ -264,7 +264,7 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False):
 
     model = init_model_func(
         adatas=[adata],  # adatas containing gene expression and TCR-seq
-        names=[dataset_name + '_CoV' if use_cov else ''],
+        names=[dataset_name + ('_CoV' if use_cov else '')],
         aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
         seq_model_arch=params['seq_model_arch'],  # seq model architecture
         seq_model_hyperparams=params['seq_model_hyperparams'],  # dict of seq model hyperparameters
@@ -277,7 +277,9 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False):
         batch_norm=params['batch_norm'],
         shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
         gene_layers=[],  # [] or list of str for layer keys of each dataset
-        seq_keys=[],  # [] or list of str for seq keys of each dataset
+        seq_keys=[],  # [] or list of str for seq keys of each dataset,
+        params_additional=params['params_additional'] if 'params_additional' in params else None,
+        conditional=conditional,
     )
 
     return model

@@ -136,14 +136,17 @@ def plot_umap_list(adata, title, color_groups):
 	:param color_groups: Column name in adata.obs used for coloring the UMAP
 	:return:
 	"""
-	if adata.X.shape[1] == 2:
-		adata.obsm['X_umap'] = adata.X
-	else:
-		sc.pp.neighbors(adata, use_rep='X')
-		sc.tl.umap(adata)
-	figures = []
-	for group in color_groups:
-		fig = sc.pl.umap(adata, color=group, title=title+'_'+group, return_fig=True)
-		fig.tight_layout()
-		figures.append(fig)
-	return figures
+	try:
+		if adata.X.shape[1] == 2:
+			adata.obsm['X_umap'] = adata.X
+		else:
+			sc.pp.neighbors(adata, use_rep='X')
+			sc.tl.umap(adata)
+		figures = []
+		for group in color_groups:
+			fig = sc.pl.umap(adata, color=group, title=title+'_'+group, return_fig=True)
+			fig.tight_layout()
+			figures.append(fig)
+		return figures
+	except ValueError:
+		return []

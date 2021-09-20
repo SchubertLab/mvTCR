@@ -4,20 +4,23 @@ import scanpy as sc
 import os
 import argparse
 import importlib
-import sys
 import warnings
 from datetime import datetime
 import optuna
-import logging
 
+import sys
 sys.path.append('../')
 sys.path.append('../config_optuna')
-import tcr_embedding as tcr  # tune needs to reload this module
+import tcr_embedding as tcr
+from tcr_embedding.utils_training import init_model
+from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
+from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 
 random_seed = 42
 import torch
 import numpy as np
 import random
+
 torch.manual_seed(random_seed)
 np.random.seed(random_seed)
 random.seed(random_seed)
@@ -34,29 +37,32 @@ def objective(trial):
 	"""
 	params = suggest_params(trial)
 
+	if rna_kld_weight is not None:
+		params['loss_weights'].append(rna_kld_weight)
+
 	save_path = f'../optuna/{name}/trial_{trial.number}'
 	if not os.path.exists(save_path):
 		os.makedirs(save_path)
 	torch.save(params, os.path.join(save_path, 'params.pkl'))
 
 	# Init Comet-ML
-	experiment_name = name + f'_trial_{trial.number}'
 	with open('../comet_ml_key/API_key.txt') as f:
 		COMET_ML_KEY = f.read()
 	experiment = Experiment(api_key=COMET_ML_KEY, workspace='tcr', project_name=name)
 	experiment.log_parameters(params)
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
-	experiment.log_parameter('experiment_name', experiment_name)
+	experiment.log_parameter('experiment_name', name + f'_trial_{trial.number}')
 	experiment.log_parameter('save_path', save_path)
 	experiment.log_parameter('balanced_sampling', args.balanced_sampling)
 	experiment.log_parameter('without_non_binder', args.without_non_binder)
 	if params['seq_model_arch'] == 'CNN':
 		experiment.log_parameters(params['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
 		experiment.log_parameters(params['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
+	experiment.log_parameters(vars(args))
 
 	adata = sc.read_h5ad('../data/10x_CD8TC/v6_supervised.h5ad')
-	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
+	# adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
 
 	if args.donor != 'all':
@@ -66,39 +72,13 @@ def objective(trial):
 		adata = adata[(adata.obs['binding_name'].isin(tcr.constants.DONOR_SPECIFIC_ANTIGENS[args.donor]))]
 	experiment.log_parameter('donors', adata.obs['donor'].unique().astype(str))
 
-	if 'single' in args.model and 'separate' not in args.model:
-		init_model = tcr.models.single_model.SingleModel
-	elif 'moe' in args.model:
-		init_model = tcr.models.moe.MoEModel
-	elif 'poe' in args.model:
-		init_model = tcr.models.poe.PoEModel
-	elif 'separate' in args.model:
-		init_model = tcr.models.separate_model.SeparateModel
-	else:
-		init_model = tcr.models.joint_model.JointModel
-	# Init Model
-	model = init_model(
-		adatas=[adata],  # adatas containing gene expression and TCR-seq
-		aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
-		seq_model_arch=params['seq_model_arch'],  # seq model architecture
-		seq_model_hyperparams=params['seq_model_hyperparams'],  # dict of seq model hyperparameters
-		scRNA_model_arch=params['scRNA_model_arch'],
-		scRNA_model_hyperparams=params['scRNA_model_hyperparams'],
-		zdim=params['zdim'],  # zdim
-		hdim=params['hdim'],  # hidden dimension of scRNA and seq encoders
-		activation=params['activation'],  # activation function of autoencoder hidden layers
-		dropout=params['dropout'],
-		batch_norm=params['batch_norm'],
-		shared_hidden=params['shared_hidden'],  # hidden layers of shared encoder / decoder
-		names=['10x'],
-		gene_layers=[],  # [] or list of str for layer keys of each dataset
-		seq_keys=[]  # [] or list of str for seq keys of each dataset
-	)
-
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='10x', use_cov=args.use_cov,
+					   conditional=args.conditional)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
 	epoch2step *= 1000  # to avoid decimal points, as we multiply with a float number
+
 	# Train Model
 	model.train(
 		experiment_name=name,
@@ -163,6 +143,23 @@ def objective(trial):
 		experiment.log_figure(figure_name=name + '_train_best_recon_clonotype', figure=fig_clonotype, step=model.epoch)
 		experiment.log_figure(figure_name=name + '_train_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
+		##################### EVALUATE KNN ON TEST #######################
+		model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
+		test_embedding_func = get_model_prediction_function(model, batch_size=1024)  # helper function for evaluation functions
+
+		# kNN antigen specificity imputation
+		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='test', use_non_binder=False,
+											use_reduced_binders=True, num_neighbors=5)
+		metrics = summary['knn']
+		for antigen, metric in metrics.items():
+			if antigen != 'accuracy':
+				experiment.log_metrics(metric, prefix='test '+antigen, step=-1, epoch=-1)
+			else:
+				experiment.log_metric('test accuracy', metric, step=-1, epoch=-1)
+
+	else:
+		print('Models not saved')
+
 	experiment.log_metric('best weighted avg f1-score', model.best_knn_metric)
 	experiment.end()
 
@@ -175,7 +172,8 @@ def objective(trial):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
-parser.add_argument('--model', type=str, default='single_scRNA')
+parser.add_argument('--model', type=str, default='RNA')
+parser.add_argument('--name', type=str, default=None)
 parser.add_argument('--suffix', type=str, default='')
 parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--early_stop', type=int, default=100)
@@ -183,23 +181,34 @@ parser.add_argument('--num_samples', type=int, default=100)
 parser.add_argument('--balanced_sampling', type=str, default=None)
 parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2', '3', '4'])
 parser.add_argument('--without_non_binder', action='store_true')
+parser.add_argument('--conditional', type=str, default=None)
+parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
+parser.add_argument('--rna_weight', type=float, default=None)
 args = parser.parse_args()
 
-suggest_params = importlib.import_module(f'{args.model}_optuna').suggest_params
-init_params = importlib.import_module(f'{args.model}_optuna').init_params
+if args.name is not None:
+	suggest_params = importlib.import_module(f'{args.name}').suggest_params
+	init_params = importlib.import_module(f'{args.name}').init_params
+	name = f'{args.name}{args.suffix}'
+else:
+	suggest_params = importlib.import_module(f'10x_{args.model.lower()}').suggest_params
+	init_params = importlib.import_module(f'10x_{args.model.lower()}').init_params
+	name = f'10x_{args.model}{args.suffix}'
 
-# Add stream handler of stdout to show the messages
-optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-name = f'10x_optuna_{args.model}{args.suffix}'
+name = name + ('_CoV' if args.use_cov else '') + (f'_cond_{args.conditional}' if args.conditional is not None else '')
+rna_kld_weight = args.rna_weight
 
-if not os.path.exists('../optuna/'):
-	os.makedirs('../optuna/')
+if not os.path.exists(f'../optuna/{name}'):
+	os.makedirs(f'../optuna/{name}')
 
-if os.path.exists('../optuna/' + name + '.db') and not args.resume:  # if not resume
-	print('Backup previous experiment database')
-	os.rename('../optuna/'+name+'.db', '../optuna/'+name+f'_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup.db')
+storage_location = f'../optuna/{name}/state.db'
+storage_name = f'sqlite:///{storage_location}'
+if os.path.exists(storage_location) and not args.resume:  # if not resume
+	print('Backup previous experiment database and models')
+	os.rename(f'../optuna/{name}', f'../optuna/{name}_{datetime.now().strftime("%Y%m%d-%H.%M")}_backup')
+	if not os.path.exists(f'../optuna/{name}'):
+		os.makedirs(f'../optuna/{name}')
 
-storage_name = "sqlite:///../optuna/{}.db".format(name)
 sampler = optuna.samplers.TPESampler(seed=random_seed)  # Make the sampler behave in a deterministic way.
 study = optuna.create_study(study_name=name, sampler=sampler, storage=storage_name, direction='maximize', load_if_exists=args.resume)
 if not args.resume:

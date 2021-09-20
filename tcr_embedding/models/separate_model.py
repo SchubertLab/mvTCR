@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from .cnn import CNNEncoder, CNNDecoder
-from .bigru import BiGRUEncoder, BiGRUDecoder
-from .transformer import TransformerEncoder, TransformerDecoder
-from .mlp import MLP
+from tcr_embedding.models.architectures.cnn import CNNEncoder, CNNDecoder
+from tcr_embedding.models.architectures.bigru import BiGRUEncoder, BiGRUDecoder
+from tcr_embedding.models.architectures.transformer import TransformerEncoder, TransformerDecoder
+from tcr_embedding.models.architectures.mlp import MLP
 from .mlp_scRNA import build_mlp_encoder, build_mlp_decoder
 from .vae_base_model import VAEBaseModel
 from tcr_embedding.datasets.scdataset import TCRDataset
@@ -16,7 +16,8 @@ def none_model(hyperparams, hdim, xdim):
 
 
 class SeparateModelTorch(nn.Module):
-	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams):
+	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
 		super(SeparateModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
@@ -39,17 +40,24 @@ class SeparateModelTorch(nn.Module):
 		self.gene_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
 		self.gene_decoder = scRNA_models[scRNA_model_arch][1](scRNA_model_hyperparams, xdim, hdim*num_modalities)
 
-		self.shared_encoder = MLP(hdim*num_modalities, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.shared_decoder = MLP(zdim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		if cond_dim > 0:
+			self.cond_emb = torch.nn.Embedding(num_conditional_labels, cond_dim)
+		self.cond_input = cond_input
+		cond_input_dim = cond_dim if cond_input else 0
+
+		self.shared_encoder = MLP(hdim*num_modalities+cond_input_dim, zdim*2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.shared_decoder = MLP(zdim+cond_dim, hdim*num_modalities, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
 
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
-	def forward(self, scRNA, tcr_seq, tcr_len):
+	def forward(self, scRNA, tcr_seq, tcr_len, conditional=None):
 		"""
 		Forward pass of autoencoder
 		:param scRNA: torch.Tensor shape=[batch_size, num_genes]
-		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, feature_dim]
+		:param tcr_seq: torch.Tensor shape=[batch_size, seq_len, num_seq_labels]
+		:param tcr_len: torch.LongTensor shape=[batch_size] indicating how long the real unpadded length is
+		:param conditional: torch.Tensor shape=[batch_size, n_cond] one-hot-encoded conditional covariates
 		:return: scRNA_pred, tcr_seq_pred
 		"""
 		alpha_seq = tcr_seq[:, :tcr_seq.shape[1]//2]
@@ -58,20 +66,33 @@ class SeparateModelTorch(nn.Module):
 		beta_seq = tcr_seq[:, tcr_seq.shape[1]//2:]
 		beta_len = tcr_len[:, 1]
 
-		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
 		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
+		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
 
-		if self.scRNA_model_arch == 'None':  # Can't use NoneType, as NoneType can't be a key for dict
-			joint_feature = torch.cat([h_alpha, h_beta], dim=-1)
+		if conditional is not None:  # more efficient than doing two concatenations
+			cond_emb_vec = self.cond_emb(conditional)
+
+		if self.scRNA_model_arch == 'None':  # Can't use NoneType, as NoneType can't be a key for dict, so str is used here
+			if conditional is not None and self.cond_input:  # more efficient than doing two concatenations
+					joint_feature = torch.cat([h_alpha, h_beta, cond_emb_vec], dim=-1)  # shape=[batch_size, hdim+cond_dim]
+			else:
+				joint_feature = torch.cat([h_alpha, h_beta], dim=-1)
 		else:
 			h_scRNA = self.gene_encoder(scRNA)  # shape=[batch_size, hdim]
-			joint_feature = torch.cat([h_scRNA, h_alpha, h_beta], dim=-1)
+			if conditional is not None and self.cond_input:
+				joint_feature = torch.cat([h_scRNA, h_alpha, h_beta, cond_emb_vec], dim=-1)
+			else:
+				joint_feature = torch.cat([h_scRNA, h_alpha, h_beta], dim=-1)
+
 		z_ = self.shared_encoder(joint_feature)  # shape=[batch_size, zdim*2]
 		mu, logvar = z_[:, :z_.shape[1]//2], z_[:, z_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z = self.reparameterize(mu, logvar)  # shape=[batch_size, zdim]
 
-		joint_dec_feature = self.shared_decoder(z)  # shape=[batch_size, hdim*2]
-
+		if conditional is not None:
+			z_input = torch.cat([z, cond_emb_vec], dim=-1)  # shape=[batch_size, zdim+cond_dim]
+		else:
+			z_input = z
+		joint_dec_feature = self.shared_decoder(z_input)  # shape=[batch_size, hdim*2]
 		if self.scRNA_model_arch == 'None':
 			scRNA_pred = None
 		else:
@@ -113,20 +134,31 @@ class SeparateModel(VAEBaseModel):
 				 names=[],
 				 gene_layers=[],
 				 seq_keys=[],
-				 params_additional=None
+				 params_additional=None,
+				 conditional=None
 				 ):
 		super(SeparateModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional)
+										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
 
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
 
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
+		if self.conditional is not None:
+			num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			try:
+				cond_dim = params_additional['c_embedding_dim']
+			except:
+				cond_dim = 20
+		else:
+			num_conditional_labels = 0
+			cond_dim = 0
+
 		self.model = SeparateModelTorch(xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm,
-										seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams)
+										seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
+										num_conditional_labels, cond_dim)
 
 	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
-
 		if tcr_seq_pred.shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
 			mask = torch.ones_like(tcr_seq).bool()
 			mask[:, [0, mask.shape[1] // 2]] = False
@@ -137,7 +169,7 @@ class SeparateModel(VAEBaseModel):
 
 		if scRNA_pred is not None:
 			scRNA_loss = loss_weights[0] * self.calc_scRNA_rec_loss(scRNA_pred, scRNA, scRNA_criterion, size_factor, self.losses[0])
-			loss += scRNA_loss
+			loss = loss + scRNA_loss
 		else:
 			scRNA_loss = torch.FloatTensor([0])
 
@@ -169,6 +201,8 @@ class SeparateModel(VAEBaseModel):
 		index_val = []
 		metadata_train = []
 		metadata_val = []
+		conditional_train = []
+		conditional_val = []
 
 		if train_masks is None:
 			masks_exist = False
@@ -224,9 +258,18 @@ class SeparateModel(VAEBaseModel):
 			metadata_train.append(adata.obs[metadata][train_mask].values)
 			metadata_val.append(adata.obs[metadata][~train_mask].values)
 
-		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, seq_len_train, adatas_train, dataset_names_train, index_train, metadata_train)
+			if self.conditional is not None:
+				conditional_train.append(adata.obsm[self.conditional][train_mask])
+				conditional_val.append(adata.obsm[self.conditional][~train_mask])
+			else:
+				conditional_train = None
+				conditional_val = None
+
+		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, seq_len_train, adatas_train, dataset_names_train,
+								   index_train, metadata_train, labels=None, conditional=conditional_train)
 		if val_split != 0:
-			val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val, index_val, metadata_val)
+			val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val, index_val,
+									 metadata_val, labels=None, conditional=conditional_val)
 		else:
 			val_dataset = None
 

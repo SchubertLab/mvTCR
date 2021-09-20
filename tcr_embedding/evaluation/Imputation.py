@@ -7,7 +7,7 @@ import scanpy as sc
 
 
 def run_imputation_evaluation(data_full, embedding_function, query_source='val', use_non_binder=True,
-                              use_reduced_binders=True, num_neighbors=5):
+                              use_reduced_binders=True, num_neighbors=5, label_pred='binding_name'):
     """
     Function for evaluating the embedding quality based upon imputation in the 10x dataset
     :param data_full: anndata object containing the full cell data (TCR + Genes) (train, val, test)
@@ -16,22 +16,28 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
     :param use_non_binder: bool filter out non binding TCRs
     :param use_reduced_binders: if true antigen with low amount of tcrs are regarded as non binders
     :param num_neighbors: amount of neighbors for knn classification
+    :param label_pred: label of the collumn used for prediction
     :return: dictionary {metric: summary} containing the evaluation scores
     """
-    data_atlas = data_full[data_full.obs['set'] == 'train']
-    data_query = data_full[data_full.obs['set'] == query_source]
+    try:
+        data_atlas = data_full[data_full.obs['set'] == 'train']
+        data_query = data_full[data_full.obs['set'] == query_source]
 
-    assert len(data_query) > 0, 'Empty query set. Specifier are "val" or "test"'
+        assert len(data_query) > 0, 'Empty query set. Specifier are "val" or "test"'
 
-    data_atlas, data_query = filter_data(data_atlas, data_query, use_non_binder=use_non_binder,
-                                         use_reduced_binders=use_reduced_binders)
+        if label_pred == 'binding_name':
+            data_atlas, data_query = filter_data(data_atlas, data_query, use_non_binder=use_non_binder,
+                                                 use_reduced_binders=use_reduced_binders)
 
-    embedding_atlas = embedding_function(data_atlas)
-    embedding_query = embedding_function(data_query)
+        embedding_atlas = embedding_function(data_atlas)
+        embedding_query = embedding_function(data_query)
 
-    scores = get_imputation_scores(embedding_atlas, embedding_query,
-                                   data_atlas.obs['binding_name'], data_query.obs['binding_name'],
-                                   num_neighbors=num_neighbors)
+        scores = get_imputation_scores(embedding_atlas, embedding_query,
+                                       data_atlas.obs[label_pred], data_query.obs[label_pred],
+                                       num_neighbors=num_neighbors)
+    except ValueError:
+        print('NaNs in the latent space')
+        return None
     return scores
 
 

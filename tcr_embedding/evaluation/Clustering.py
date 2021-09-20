@@ -18,21 +18,30 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
     :param cluster_params: parameters for leiden clustering, None for default
     :return: dictionary {metric: summary} containing the evaluation scores
     """
-    if source_data == 'all':
-        data_eval = data_full
-    else:
-        data_eval = data_full[data_full.obs['set'] == source_data]
+    try:
+        if source_data == 'all':
+            data_eval = data_full
+        else:
+            data_eval = data_full[data_full.obs['set'] == source_data]
 
-    assert len(data_eval) > 0, 'Empty data set. Specifier are "val" or "test"'
+        assert len(data_eval) > 0, 'Empty data set. Specifier are "val" or "test"'
 
-    embeddings = embedding_function(data_eval)
-    embeddings_adata = AnnData(embeddings)
-    embeddings_adata.obs[name_label] = data_eval.obs[name_label].to_numpy()
+        embeddings = embedding_function(data_eval)
+        embeddings_adata = AnnData(embeddings)
+        embeddings_adata.obs[name_label] = data_eval.obs[name_label].to_numpy()
 
-    labels_true = data_eval.obs[name_label].to_numpy()
-    labels_predicted = predict_clustering(embeddings_adata, cluster_params, visualize, name_label)
+        labels_true = data_eval.obs[name_label].to_numpy()
+        labels_predicted = predict_clustering(embeddings_adata, cluster_params, visualize, name_label)
 
-    scores = get_clustering_scores(embeddings, labels_true, labels_predicted)
+        scores = get_clustering_scores(embeddings, labels_true, labels_predicted)
+    except ValueError:
+        # If training runs haywire we end up here during evaluation
+        print('Latent space contains NaN. Set worst clustering scores')
+        scores = {
+            'ASW': -1,
+            'ARI': -1,
+            'NMI': 0
+        }
     return scores
 
 
@@ -71,6 +80,7 @@ def get_clustering_scores(embeddings, labels_true, labels_predicted):
     """
     summary = {
         'ASW': Metrics.get_silhouette_scores(embeddings, labels_predicted),
+        'ARI': Metrics.get_adjusted_random_score(labels_true, labels_predicted),
         'NMI': Metrics.get_normalized_mutual_information(labels_true, labels_predicted)
     }
     return summary
