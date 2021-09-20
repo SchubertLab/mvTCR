@@ -21,9 +21,11 @@ from .losses.kld import KLD
 from .losses.CoVWeightening import CoVWeighter
 
 from .base_model import BaseModel
+from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
 from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 from tcr_embedding.models.scGen import PertubationPredictor
+from tcr_embedding.models.losses.optimization_modes import init_optimization_mode_params
 
 
 class VAEBaseModel(BaseModel, ABC):
@@ -44,7 +46,9 @@ class VAEBaseModel(BaseModel, ABC):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None
+				 conditional=None,
+				 optimization_mode='Reconstruction',
+				 optimization_mode_params=None
 				 ):
 		"""
 		VAE Base Model, used for both single and joint models
@@ -64,7 +68,8 @@ class VAEBaseModel(BaseModel, ABC):
 		:param gene_layers: list of str or [], keys for scRNA data, i.e. adata.layer[gene_layers[i]] for each dataset i, or empty to use adata.X
 		:param seq_keys: list of str or [], keys for TCR data, i.e. adata.obsm[seq_keys[i]] for each dataset i, or empty to use adata.obsm['tcr_seq']
 		:param conditional: str or None, if None a normal VAE is used, if str then the str determines the adata.obsm[conditional] as conditioning variable
-		:param rna_priority: int or None, if not None, the TCR module is only trained every n-th iteration
+		:param optimization_mode: str, 'Reconstruction', 'Prediction', 'scGen', 'RNA_KLD', 'RNA_MMD', 'RNA_MEAN'
+		:param optimization_mode_params: dict carrying the mode specific parameters
 		"""
 
 		assert len(adatas) == len(names)
@@ -80,6 +85,8 @@ class VAEBaseModel(BaseModel, ABC):
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
 		self.conditional = conditional
+		self.optimization_mode = optimization_mode
+		self.optimization_mode_params = init_optimization_mode_params(optimization_mode, optimization_mode_params)
 
 		if 'max_tcr_length' not in seq_model_hyperparams:
 			seq_model_hyperparams['max_tcr_length'] = self.get_max_tcr_length()
@@ -292,24 +299,7 @@ class VAEBaseModel(BaseModel, ABC):
 
 				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
 
-				if self.moe:
-					KLD_loss = 0.5 * loss_weights[2] * \
-							   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1])) * \
-							   self.kl_annealing(e, kl_annealing_epochs)
-					z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
-				elif self.poe:
-					KLD_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
-							   (KL_criterion(mu[0], logvar[0]) +
-								KL_criterion(mu[1], logvar[1]) +
-								KL_criterion(mu[2], logvar[2]))
-					# possible constrain on joint space to resemble more the TCR space
-					if len(loss_weights) == 4:
-						kld_rna_joint = KL_criterion(mu[0], logvar[0], mu[2], logvar[2])
-						KLD_loss += self.kl_annealing(e, kl_annealing_epochs) * loss_weights[3] * kld_rna_joint
-					z = mu[2]  # use joint latent variable for further downstream tasks
-				else:
-					KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
-					z = mu  # make z deterministic by using the mean
+				KLD_loss, z = self.calculate_variationals(loss_weights, KL_criterion, mu, logvar, e, kl_annealing_epochs)
 
 				if self.tcr_annealing:
 					loss_weights[1] = self.calculate_tcr_annealing(init_tcr_loss_weight, n_epochs, e)
@@ -406,21 +396,8 @@ class VAEBaseModel(BaseModel, ABC):
 							conditional = None
 
 						z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
-
-						if self.moe:
-							KLD_loss = 0.5 * loss_weights[2] * \
-									   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1])) * \
-									   self.kl_annealing(e, kl_annealing_epochs)
-							z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
-						elif self.poe:
-							KLD_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
-									   (KL_criterion(mu[0], logvar[0]) + KL_criterion(mu[1], logvar[1]) + KL_criterion(
-										   mu[2], logvar[2]))
-							z = z[2]  # use joint latent variable
-						else:
-							KLD_loss = loss_weights[2] * KL_criterion(mu, logvar) * self.kl_annealing(e,
-																									  kl_annealing_epochs)
-
+						KLD_loss, z = self.calculate_variationals(loss_weights, KL_criterion, mu, logvar,
+															   e, kl_annealing_epochs)
 						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq,
 																		 loss_weights, scRNA_criterion, TCR_criterion,
 																		 size_factor)
@@ -520,11 +497,13 @@ class VAEBaseModel(BaseModel, ABC):
 
 			# kNN evaluation
 			if save_every is not None and e % save_every == 0:
-				if self.names[0] == '10x':
-					self.report_validation_10x(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
-				if 'reconstruction' in self.names[0]:
+				if self.optimization_mode == 'Prediction':
+					self.report_validation_prediction(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
+				if self.optimization_mode == 'Reconstruction':
 					self.report_reconstruction(loss_val_total, tune)
-				if self.names[0] == 'scgen':
+				if self.optimization_mode == 'PseudoMetric':
+					self.report_pseudo_metric(batch_size, e, epoch2step, tune, comet)
+				if self.optimization_mode == 'scGen':
 					self.report_scgen(tune, comet, e, epoch2step)
 
 			if early_stop is not None and no_improvements > early_stop:
@@ -535,7 +514,7 @@ class VAEBaseModel(BaseModel, ABC):
 				print(f'Loss became NaN, Loss: {loss}')
 				return
 
-	def report_validation_10x(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name, pbar):
+	def report_validation_prediction(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name, pbar):
 		"""
 		Report the objective metric of the 10x dataset for hyper parameter optimization.
 		:param batch_size: Batch size for creating the validation latent space
@@ -547,11 +526,11 @@ class VAEBaseModel(BaseModel, ABC):
 		:param experiment_name: Name of the experiment for logging
 		:return: Reports to RayTune log files and externally to comet, saves model.
 		"""
-
 		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
 		try:
 			summary = run_imputation_evaluation(self.adatas[0], test_embedding_func, query_source='val',
-												use_non_binder=True, use_reduced_binders=True)
+												use_non_binder=True, use_reduced_binders=True,
+												label_pred=self.optimization_mode_params['prediction_column'])
 		except:
 			print(f'kNN did not work')
 			if tune is not None:
@@ -583,6 +562,37 @@ class VAEBaseModel(BaseModel, ABC):
 		"""
 		if tune is not None:
 			tune.report(reconstruction=validation_loss)
+
+	def report_pseudo_metric(self, batch_size, epoch, epoch2step, comet):
+		"""
+		Calculate a pseudo metric based on kNN of multiple meta information
+		:param batch_size:
+		:param epoch:
+		:param epoch2step:
+		:param tune:
+		:param comet:
+		:return:
+		"""
+		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
+		try:
+			summary = run_knn_within_set_evaluation(self.adatas[0], test_embedding_func,
+													self.optimization_mode_params['prediction_labels'], set='val')
+		except:
+			print('Error in kNN')
+			return
+
+		if comet is not None:
+			for antigen, metric in metrics.items():
+				if antigen != 'accuracy':
+					comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
+				else:
+					comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
+
+		if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
+			self.best_knn_metric = metrics['weighted avg']['f1-score']
+			self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
+			pbar.set_postfix(best_f1_score=self.best_knn_metric, best_epoch=epoch)
+		raise NotImplementedError
 
 	def report_scgen(self, tune, comet, epoch, epoch2step):
 		evaluator = PertubationPredictor(self, self.adatas[0], verbosity=0)
@@ -819,3 +829,34 @@ class VAEBaseModel(BaseModel, ABC):
 			return init_tcr_loss_weight * (e - n_epochs / 2) / (n_epochs / 2)
 		else:
 			return 0.0
+
+	def calculate_variationals(self, loss_weights, kl_criterion, mu, logvar, e, kl_annealing_epochs):
+		"""
+		Calculate the kld loss and z depending on the model type
+		:param loss_weights: list, containing the weightening of the different loss factors
+		:param KL_criterion: nn.Module, used to calculate the KLD loss
+		:param mu: mean of the VAE latent space
+		:param logvar: log(variance) of the VAE latent space
+		:param e: current epoch as integer
+		:param kl_annealing_epochs: amount of kl annealing epochs
+		:return:
+		"""
+		if self.moe:
+			kld_loss = 0.5 * loss_weights[2] * \
+					   (kl_criterion(mu[0], logvar[0]) + kl_criterion(mu[1], logvar[1])) * \
+					   self.kl_annealing(e, kl_annealing_epochs)
+			z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
+		elif self.poe:
+			kld_loss = 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(e, kl_annealing_epochs) * \
+					   (kl_criterion(mu[0], logvar[0]) +
+						kl_criterion(mu[1], logvar[1]) +
+						kl_criterion(mu[2], logvar[2]))
+			# possible constrain on joint space to resemble more the TCR space
+			if len(loss_weights) == 4:
+				kld_rna_joint = kl_criterion(mu[0], logvar[0], mu[2], logvar[2])
+				kld_loss += self.kl_annealing(e, kl_annealing_epochs) * loss_weights[3] * kld_rna_joint
+			z = mu[2]  # use joint latent variable for further downstream tasks
+		else:
+			kld_loss = loss_weights[2] * kl_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
+			z = mu  # make z deterministic by using the mean
+		return kld_loss, z

@@ -1,5 +1,4 @@
 # <- Initialisation for the different optimization modes ->
-
 def init_optimization_mode_params(optimization_mode, mode_params):
     """
     Initialise the mode params for the different modes
@@ -8,12 +7,10 @@ def init_optimization_mode_params(optimization_mode, mode_params):
     :return:
     """
     modes = {
-        'Prediction': default_reconstruction,
+        'Prediction': default_prediction,
         'scGen': default_scgen,
-        'RNA_KLD': default_rna_kld,
-        'RNA_MMD': default_rna_mmd,
-        'RNA_MEAN': default_rna_mean,
         'Reconstruction': default_reconstruction,
+        'PseudoMetric': default_pseudo_metric,
     }
     if optimization_mode is None:
         get_setting = default_reconstruction
@@ -43,31 +40,15 @@ def default_scgen():
     # return default_settings
 
 
-def default_rna_kld():
-    default_settings = {
-        'do_annealing': True
-    }
-    return default_settings
-
-
-def default_rna_mmd():
-    default_settings = {
-    }
-    return default_settings
-
-
-def default_rna_mean():
-    default_settings = {
-        'do_annealing': True
-    }
-    return default_settings
-
-
 def default_reconstruction():
     default_settings = {
     }
     return default_settings
 
 
-def default_empty():
-    return {}
+def default_pseudo_metric():
+    default_settings = {
+        'weight_cell_type': 1.,
+        'weight_clonotype': 1.,  # todo
+    }
+    return default_settings

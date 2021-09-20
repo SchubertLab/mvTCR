@@ -2,12 +2,11 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import math
 
-from .cnn import CNNEncoder, CNNDecoder
-from .bigru import BiGRUEncoder, BiGRUDecoder
-from .transformer import TransformerEncoder, TransformerDecoder
-from .mlp import MLP
+from tcr_embedding.models.architectures.cnn import CNNEncoder, CNNDecoder
+from tcr_embedding.models.architectures.bigru import BiGRUEncoder, BiGRUDecoder
+from tcr_embedding.models.architectures.transformer import TransformerEncoder, TransformerDecoder
+from tcr_embedding.models.architectures.mlp import MLP
 from .mlp_scRNA import build_mlp_encoder, build_mlp_decoder
 from .vae_base_model import VAEBaseModel
 from tcr_embedding.datasets.scdataset import TCRDataset

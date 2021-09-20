@@ -128,3 +128,11 @@ def get_square_pearson(ground_truth, prediction):
         'r_squared': r_squared
     }
     return report
+
+
+def get_knn_f1_within_set(latent, column_name):
+    con = latent.obsp['connectivities'].A.astype(np.bool)
+    nearest_neighbor_label = [latent.obs[column_name].values[row].tolist()[0] for row in con]
+    result = classification_report(latent.obs[column_name], nearest_neighbor_label, output_dict=True)
+    result = result['weighted avg']['f1-score']
+    return result

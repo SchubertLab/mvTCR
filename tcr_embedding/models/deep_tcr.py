@@ -10,7 +10,7 @@ import scanpy as sc
 
 from .losses.kld import KLD
 from tcr_embedding.datasets.scdataset import DeepTCRDataset
-from tcr_embedding.models.cnn import CNNEncoder, CNNDecoder
+from tcr_embedding.models.architectures.cnn import CNNEncoder, CNNDecoder
 
 
 class SharedEncoder(nn.Module):
