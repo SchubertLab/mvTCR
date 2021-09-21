@@ -1,11 +1,13 @@
 import numpy as np
 
 
-def get_model_prediction_function(model, batch_size=512):
+def get_model_prediction_function(model, batch_size=512, do_adata=False, metadata=None):
     """
     Wrapper function for our embedding models
     :param model: trained pytorch model
     :param batch_size: num of samples in forward pass
+    :param do_adata: return the adata object (else numpy array)
+    :param metadata: add these .obs from the original to the created anndata object
     :return: function for calculating the latent space of cells in an anndata object
     """
     def prediction_function(data):
@@ -14,7 +16,9 @@ def get_model_prediction_function(model, batch_size=512):
         :param data: anndata object containing the cell data
         :return: numpy array (num_cells, hidden_dim) latent embedding for each cell
         """
-        latent_space = model.get_latent([data], batch_size=batch_size, return_mean=True)
+        latent_space = model.get_latent([data], batch_size=batch_size, return_mean=True, metadata=metadata)
+        if do_adata:
+            return latent_space
         latent_space = latent_space.X
         return latent_space
     return prediction_function
