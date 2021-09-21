@@ -14,7 +14,7 @@ import tcr_embedding as tcr
 from tcr_embedding.utils_training import init_model
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 from tcr_embedding.evaluation.Clustering import run_clustering_evaluation
-from tcr_embedding.evaluation.kNN import run_knn_evaluation
+from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
 
 random_seed = 42
 import torch
@@ -129,9 +129,9 @@ def objective(trial):
 							   epoch=model.epoch)
 
 		print('kNN evaluation')
-		summary = run_knn_evaluation(adata, test_embedding_func, name_label='full_clustering', query_source='val', num_neighbors=5)
-		metrics = summary['knn']
-		for key, metric in metrics.items():
+		summary = run_knn_within_set_evaluation(adata, test_embedding_func,
+												['full_clustering', 'clonotype'], subset='val')
+		for key, metric in summary.items():
 			if key != 'accuracy':
 				experiment.log_metrics(metric, prefix=f'Val {key}', epoch=model.epoch)
 			else:
