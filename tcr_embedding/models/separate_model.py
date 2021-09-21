@@ -135,10 +135,13 @@ class SeparateModel(VAEBaseModel):
 				 gene_layers=[],
 				 seq_keys=[],
 				 params_additional=None,
-				 conditional=None
+				 conditional=None,
+				 optimization_mode='Reconstruction',
+				 optimization_mode_params=None
 				 ):
 		super(SeparateModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
+										 zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
+											optimization_mode=optimization_mode, optimization_mode_params=optimization_mode_params)
 
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
 

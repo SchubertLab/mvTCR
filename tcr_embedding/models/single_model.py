@@ -135,7 +135,8 @@ class SingleModel(VAEBaseModel):
 
 		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,
 										  scRNA_model_hyperparams, zdim, hdim, activation, dropout, batch_norm,
-										  shared_hidden, names, gene_layers, seq_keys, params_additional, conditional)
+										  shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
+										  optimization_mode=optimization_mode, optimization_mode_params=optimization_mode_params)
 
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)

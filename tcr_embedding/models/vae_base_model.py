@@ -86,7 +86,9 @@ class VAEBaseModel(BaseModel, ABC):
 		self.seq_model_arch = seq_model_arch
 		self.conditional = conditional
 		self.optimization_mode = optimization_mode
-		self.optimization_mode_params = init_optimization_mode_params(optimization_mode, optimization_mode_params)
+
+		self.optimization_mode_params = optimization_mode_params
+		# init_optimization_mode_params(optimization_mode, optimization_mode_params)
 
 		if 'max_tcr_length' not in seq_model_hyperparams:
 			seq_model_hyperparams['max_tcr_length'] = self.get_max_tcr_length()
@@ -332,8 +334,7 @@ class VAEBaseModel(BaseModel, ABC):
 
 				self.optimizer.zero_grad()
 				loss.backward()
-				if 'grad_clip' in self.optimization_mode_params:
-					print('performing grad clip')
+				if self.optimization_mode_params is not None and 'grad_clip' in self.optimization_mode_params:
 					nn.utils.clip_grad_value_(self.model.parameters(), self.optimization_mode_params['grad_clip'])
 				self.optimizer.step()
 
