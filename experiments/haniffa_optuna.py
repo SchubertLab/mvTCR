@@ -119,7 +119,7 @@ params_fixed = {
 	'save_every': 1,
 }
 params_fixed.update(vars(args))
-
+params_fixed['name'] = name
 
 
 if not os.path.exists(f'../optuna/{name}'):
