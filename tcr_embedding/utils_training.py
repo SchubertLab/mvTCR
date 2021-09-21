@@ -209,8 +209,7 @@ def initialize_comet(params_hpo, params_fixed):
     if 'comet' not in params_fixed or params_fixed['comet'] is None:
         return None
 
-    current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
-    experiment_name = params_fixed['name'] + '_' + current_datetime
+    experiment_name = params_fixed['name']
 
     path_key = os.path.join(os.path.dirname(__file__), '../comet_ml_key/API_key.txt')
     with open(path_key) as f:

@@ -85,6 +85,7 @@ class VAEBaseModel(BaseModel, ABC):
 		self._val_history = defaultdict(list)
 		self.seq_model_arch = seq_model_arch
 		self.conditional = conditional
+		print(optimization_mode)
 		self.optimization_mode = optimization_mode
 
 		self.optimization_mode_params = optimization_mode_params
@@ -501,13 +502,15 @@ class VAEBaseModel(BaseModel, ABC):
 				self.save(os.path.join(save_path, f'{experiment_name}_last_model.pt'))
 
 			# kNN evaluation
+			print(self.optimization_mode)
 			if save_every is not None and e % save_every == 0:
 				if self.optimization_mode == 'Prediction':
 					self.report_validation_prediction(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
 				if self.optimization_mode == 'Reconstruction':
 					self.report_reconstruction(loss_val_total, tune)
 				if self.optimization_mode == 'PseudoMetric':
-					self.report_pseudo_metric(batch_size, e, epoch2step, tune, comet)
+					print('p2')
+					self.report_pseudo_metric(batch_size, e, epoch2step, comet, save_path, experiment_name)
 				if self.optimization_mode == 'scGen':
 					self.report_scgen(tune, comet, e, epoch2step)
 
@@ -579,11 +582,13 @@ class VAEBaseModel(BaseModel, ABC):
 		:param experiment_name:
 		:return:
 		"""
+		print('p1')
 		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
 		try:
 			summary = run_knn_within_set_evaluation(self.adatas[0], test_embedding_func,
 													self.optimization_mode_params['prediction_labels'], subset='val')
 			summary['pseudo_metric'] = sum(summary.values())
+			print(summary['pseudo_metric'])
 		except:
 			print('Error in kNN')
 			return
