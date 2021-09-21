@@ -117,6 +117,7 @@ class VAEBaseModel(BaseModel, ABC):
 		self.poe = False
 
 		self.params_additional = params_additional
+		self.best_optimization_metric = None
 
 		self.tcr_annealing = False
 		if type(params_additional) == dict:
@@ -331,6 +332,9 @@ class VAEBaseModel(BaseModel, ABC):
 
 				self.optimizer.zero_grad()
 				loss.backward()
+				if 'grad_clip' in self.optimization_mode_params:
+					print('performing grad clip')
+					nn.utils.clip_grad_value_(self.model.parameters(), self.optimization_mode_params['grad_clip'])
 				self.optimizer.step()
 
 				loss_train_total.append(loss.detach())
@@ -563,36 +567,31 @@ class VAEBaseModel(BaseModel, ABC):
 		if tune is not None:
 			tune.report(reconstruction=validation_loss)
 
-	def report_pseudo_metric(self, batch_size, epoch, epoch2step, comet):
+	def report_pseudo_metric(self, batch_size, epoch, epoch2step, comet, save_path, experiment_name):
 		"""
 		Calculate a pseudo metric based on kNN of multiple meta information
 		:param batch_size:
 		:param epoch:
 		:param epoch2step:
-		:param tune:
 		:param comet:
+		:param save_path:
+		:param experiment_name:
 		:return:
 		"""
 		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
 		try:
 			summary = run_knn_within_set_evaluation(self.adatas[0], test_embedding_func,
-													self.optimization_mode_params['prediction_labels'], set='val')
+													self.optimization_mode_params['prediction_labels'], subset='val')
+			summary['pseudo_metric'] = sum(summary.values())
 		except:
 			print('Error in kNN')
 			return
 
 		if comet is not None:
-			for antigen, metric in metrics.items():
-				if antigen != 'accuracy':
-					comet.log_metrics(metric, prefix=antigen, step=int(epoch * epoch2step), epoch=epoch)
-				else:
-					comet.log_metric('accuracy', metric, step=int(epoch * epoch2step), epoch=epoch)
-
-		if metrics['weighted avg']['f1-score'] > self.best_knn_metric:
-			self.best_knn_metric = metrics['weighted avg']['f1-score']
-			self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
-			pbar.set_postfix(best_f1_score=self.best_knn_metric, best_epoch=epoch)
-		raise NotImplementedError
+			comet.log_metrics(summary, step=int(epoch * epoch2step), epoch=epoch)
+		if self.best_optimization_metric is None or summary['pseudo_metric'] > self.best_optimization_metric:
+			self.best_optimization_metric = summary['pseudo_metric']
+			self.save(os.path.join(save_path, f'{experiment_name}_best_model_by_metric.pt'))
 
 	def report_scgen(self, tune, comet, epoch, epoch2step):
 		evaluator = PertubationPredictor(self, self.adatas[0], verbosity=0)
@@ -854,7 +853,8 @@ class VAEBaseModel(BaseModel, ABC):
 			# possible constrain on joint space to resemble more the TCR space
 			if len(loss_weights) == 4:
 				kld_rna_joint = kl_criterion(mu[0], logvar[0], mu[2], logvar[2])
-				kld_loss += self.kl_annealing(e, kl_annealing_epochs) * loss_weights[3] * kld_rna_joint
+				kld_rna_joint = self.kl_annealing(e, kl_annealing_epochs) * loss_weights[3] * kld_rna_joint
+				kld_loss += kld_rna_joint
 			z = mu[2]  # use joint latent variable for further downstream tasks
 		else:
 			kld_loss = loss_weights[2] * kl_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)

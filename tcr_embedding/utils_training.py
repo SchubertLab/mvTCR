@@ -6,6 +6,10 @@ import os
 import yaml
 import argparse
 
+import random
+import torch
+import numpy as np
+
 from datetime import datetime
 
 import ray
@@ -14,17 +18,27 @@ from ray import tune
 import tcr_embedding.models as models
 
 
+def fix_seeds():
+    random_seed = 42
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--resume', action='store_true', help='If flag is set, then resumes previous training')
     parser.add_argument('--model', type=str, default='single_scRNA')
+    parser.add_argument('--name', type=str, default='default_name')
     parser.add_argument('--suffix', type=str, default='')
     parser.add_argument('--n_epochs', type=int, default=10)
     parser.add_argument('--early_stop', type=int, default=100)
     parser.add_argument('--num_samples', type=int, default=100)
     parser.add_argument('--balanced_sampling', type=str, default=None)
     parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2', '3', '4'])
+    parser.add_argument('--conditional', type=str, default=None)
     parser.add_argument('--without_non_binder', action='store_true')
+    parser.add_argument('--rna_weight', type=float, default=None)
     arguments = parser.parse_args()
     return arguments
 
@@ -45,6 +59,8 @@ def load_data(source='10x'):
         path_source = 'BCC/06_bcc_highly_var_5000.h5ad'
     elif source == 'covid':
         path_source = 'Covid/04_covid_highly_var_5000.h5ad'
+    elif source == 'haniffa':
+        path_source = 'Haniffa/v3_conditional.h5ad'
     else:
         path_source = source
     path_file = os.path.join(path_base, path_source)
@@ -53,7 +69,7 @@ def load_data(source='10x'):
         data = sc.read_h5ad(path_file)
     except FileNotFoundError:
         raise FileNotFoundError(f'Data file not found at {path_file}. '
-                                f'Please specify data source by "10x", "bcc" or "covid". '
+                                f'Please specify data source by "10x", "bcc", "haniffa", or "covid". '
                                 f'Alternatively, as filename starting from the data folder.')
     return data
 
@@ -166,9 +182,6 @@ def train_call(model, params_hpo, params_fixed, comet):
     early_stop = params_fixed['early_stop'] * params_hpo['batch_size'] // 256
     epoch2step = 256 / params_hpo['batch_size']
     epoch2step *= 1000
-    save_every = n_epochs // params_fixed['num_checkpoints']
-    if save_every == 0:
-        save_every = 1
     model.train(
         experiment_name=params_fixed['name'],
         n_iters=None,
@@ -183,18 +196,17 @@ def train_call(model, params_hpo, params_fixed, comet):
         early_stop=early_stop,
         balanced_sampling=params_fixed['balanced_sampling'],
         validate_every=params_fixed['validate_every'],
-        save_every=save_every,
+        save_every=params_fixed['save_every'],
         save_path=params_fixed['save_path'],
         save_last_model=False,
         num_workers=0,
         device=None,
         comet=comet,
-        tune=tune
     )
 
 
 def initialize_comet(params_hpo, params_fixed):
-    if params_fixed['comet'] is None:
+    if 'comet' not in params_fixed or params_fixed['comet'] is None:
         return None
 
     current_datetime = datetime.now().strftime("%Y%m%d-%H.%M")
@@ -240,7 +252,8 @@ def select_model_by_name(model_name):
     return init_model
 
 
-def init_model(params, model_type, adata, dataset_name, use_cov=False, conditional=None):
+def init_model(params, model_type, adata, dataset_name, conditional=None, optimization_mode='Reconstruction',
+               optimization_mode_params=None):
     if model_type.lower() == 'rna':
         init_model_func = models.single_model.SingleModel
     elif model_type.lower() == 'poe':
@@ -264,7 +277,7 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False, condition
 
     model = init_model_func(
         adatas=[adata],  # adatas containing gene expression and TCR-seq
-        names=[dataset_name + ('_CoV' if use_cov else '')],
+        names=[dataset_name],
         aa_to_id=adata.uns['aa_to_id'],  # dict {aa_char: id}
         seq_model_arch=params['seq_model_arch'],  # seq model architecture
         seq_model_hyperparams=params['seq_model_hyperparams'],  # dict of seq model hyperparameters
@@ -280,6 +293,8 @@ def init_model(params, model_type, adata, dataset_name, use_cov=False, condition
         seq_keys=[],  # [] or list of str for seq keys of each dataset,
         params_additional=params['params_additional'] if 'params_additional' in params else None,
         conditional=conditional,
+        optimization_mode=optimization_mode,
+        optimization_mode_params=optimization_mode_params
     )
 
     return model

@@ -129,6 +129,8 @@ class SingleModel(VAEBaseModel):
 				 seq_keys=[],
 				 params_additional=None,
 				 conditional=None,
+				 optimization_mode='Reconstruction',
+				 optimization_mode_params=None
 				 ):
 
 		super(SingleModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch,
