@@ -585,7 +585,6 @@ class VAEBaseModel(BaseModel, ABC):
 			summary = run_knn_within_set_evaluation(self.adatas[0], test_embedding_func,
 													self.optimization_mode_params['prediction_labels'], subset='val')
 			summary['pseudo_metric'] = sum(summary.values())
-			print(summary['pseudo_metric'])
 		except Exception as e:
 			print(e)
 			print('Error in kNN')

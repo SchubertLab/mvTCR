@@ -43,7 +43,7 @@ def objective(trial):
 	torch.save(params, os.path.join(save_path, 'params.pkl'))
 	params_fixed['save_path'] = save_path
 
-	experiment = utils_train.initialize_comet(params, vars(args))
+	experiment = utils_train.initialize_comet(params, params_fixed)
 
 	adata = utils_train.load_data('haniffa')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
@@ -119,7 +119,7 @@ params_fixed = {
 	'save_every': 1,
 }
 params_fixed.update(vars(args))
-
+params_fixed['name'] = name
 
 
 if not os.path.exists(f'../optuna/{name}'):
