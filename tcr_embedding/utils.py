@@ -148,5 +148,6 @@ def plot_umap_list(adata, title, color_groups):
 			fig.tight_layout()
 			figures.append(fig)
 		return figures
-	except ValueError:
+	except ValueError as e:
+		print(e)
 		return []

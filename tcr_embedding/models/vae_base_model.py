@@ -856,7 +856,7 @@ class VAEBaseModel(BaseModel, ABC):
 			# possible constrain on joint space to resemble more the TCR space
 			if len(loss_weights) == 4:
 				kld_rna_joint = kl_criterion(mu[0], logvar[0], mu[2], logvar[2])
-				kld_rna_joint = self.kl_annealing(e, kl_annealing_epochs) * loss_weights[3] * kld_rna_joint
+				kld_rna_joint = loss_weights[3] * kld_rna_joint
 				kld_loss += kld_rna_joint
 			z = mu[2]  # use joint latent variable for further downstream tasks
 		else:
