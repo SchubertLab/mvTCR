@@ -16,7 +16,8 @@ def get_model_prediction_function(model, batch_size=512, do_adata=False, metadat
         :param data: anndata object containing the cell data
         :return: numpy array (num_cells, hidden_dim) latent embedding for each cell
         """
-        latent_space = model.get_latent([data], batch_size=batch_size, return_mean=True, metadata=metadata)
+        metadata_tmp = metadata if metadata is not None else []
+        latent_space = model.get_latent([data], batch_size=batch_size, return_mean=True, metadata=metadata_tmp)
         if do_adata:
             return latent_space
         latent_space = latent_space.X
