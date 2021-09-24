@@ -12,7 +12,7 @@ def suggest_params(trial):
 
 	params = {'activation': activation,
 			  'batch_norm': True,
-			  'batch_size': trial.suggest_categorical('batch_size', [256, 512, 1024]),
+			  'batch_size': 512,
 			  'dropout': dropout,
 			  'hdim': hdim,
 			  'loss_weights': [1.0, loss_weights_seq, loss_weights_kl],
@@ -37,8 +37,8 @@ def suggest_params(trial):
 			  'seq_model_arch': 'Transformer',
 			  'seq_model_hyperparams': {
 				  'embedding_size': trial.suggest_categorical('tfmr_embedding_size', [16, 32, 64]),
-				  'num_heads': trial.suggest_categorical('tfmr_num_heads', [1, 2, 4, 8]),
-				  'forward_expansion': trial.suggest_categorical('tfmr_forward_expansion', [1, 2, 4]),
+				  'num_heads': trial.suggest_categorical('tfmr_num_heads', [2, 4, 8]),
+				  'forward_expansion': 4,
 				  'encoding_layers': tfmr_encoding_layers,
 				  'decoding_layers': tfmr_encoding_layers,  # encoding_layers is used here too
 				  'dropout': trial.suggest_float('tfmr_dropout', 0, 0.3, step=0.05),
@@ -52,7 +52,7 @@ def suggest_params(trial):
 
 # Keys need to match optuna param name in suggest_params
 init_params = [{'activation': 'leakyrelu',
-				'batch_size': 256,
+				'batch_size': 512,
 				'dropout': 0.2,
 				'hdim': 800,
 				'loss_weights_kl': 5e-8,
