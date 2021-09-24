@@ -595,6 +595,8 @@ class VAEBaseModel(BaseModel, ABC):
 		if self.best_optimization_metric is None or summary['pseudo_metric'] > self.best_optimization_metric:
 			self.best_optimization_metric = summary['pseudo_metric']
 			self.save(os.path.join(save_path, f'{experiment_name}_best_model_by_metric.pt'))
+			comet.log_metric('max_pseudo_metric',  self.best_optimization_metric,
+							 step=int(epoch * epoch2step), epoch=epoch)
 
 	def report_scgen(self, tune, comet, epoch, epoch2step):
 		evaluator = PertubationPredictor(self, self.adatas[0], verbosity=0)

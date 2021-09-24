@@ -72,22 +72,42 @@ def objective(trial):
 		for fig, color_group in zip(figs, color_groups):
 			experiment.log_figure(figure_name=name + '_train_recon_' + color_group, figure=fig, step=model.epoch)
 
-		print('Cluster score evaluation')
-		test_embedding_func = get_model_prediction_function(model, batch_size=1024)  # helper function for evaluation function
-		cluster_results = []
-		for resolution in [0.01, 0.1, 1.0]:
-			cluster_result = run_clustering_evaluation(adata, test_embedding_func, 'train', name_label='full_clustering',
-													   cluster_params={'resolution': resolution, 'num_neighbors': 15}, visualize=False)
-			cluster_results.append(cluster_result)
+		if os.path.exists(os.path.join(save_path, f'{name}_best_model_by_metric.pt')):
+			# UMAP
+			print('UMAP for best metric loss model on val')
+			model.load(os.path.join(save_path, f'{name}_best_model_by_metric.pt'))
+			val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=1024, metadata=color_groups)
+			figs = tcr.utils.plot_umap_list(val_latent, title=name + '_val_best_metric', color_groups=color_groups)
+			for fig, color_group in zip(figs, color_groups):
+				experiment.log_figure(figure_name=name + '_val_recon_' + color_group, figure=fig, step=model.epoch)
 
-		cluster_results = pd.DataFrame(cluster_results)
-		# weighted sum, since ASW goes from -1 to 1, while NMI goes from 0 to 1
-		cluster_results['weighted_sum'] = 0.5 * cluster_results['ASW'] + cluster_results['NMI']
-		idxmax = cluster_results['weighted_sum'].idxmax()
-		best_cluster_score = cluster_results.loc[idxmax]
-		experiment.log_metrics({'ASW': best_cluster_score['ASW'],
-								'NMI': best_cluster_score['NMI']},
-							   epoch=model.epoch)
+			print('UMAP for best metric loss model on train')
+			model.load(os.path.join(save_path, f'{name}_best_model_by_metric.pt'))
+			train_latent = model.get_latent([adata[adata.obs['set'] == 'train']], batch_size=1024,
+											metadata=color_groups)
+			figs = tcr.utils.plot_umap_list(train_latent, title=name + '_train_best_metric', color_groups=color_groups)
+			for fig, color_group in zip(figs, color_groups):
+				experiment.log_figure(figure_name=name + '_train_recon_' + color_group, figure=fig, step=model.epoch)
+
+			print('Cluster score evaluation')
+			test_embedding_func = get_model_prediction_function(model,
+																batch_size=1024)  # helper function for evaluation function
+			cluster_results = []
+			for resolution in [0.01, 0.1, 1.0]:
+				cluster_result = run_clustering_evaluation(adata, test_embedding_func, 'train',
+														   name_label='full_clustering',
+														   cluster_params={'resolution': resolution,
+																		   'num_neighbors': 15}, visualize=False)
+				cluster_results.append(cluster_result)
+
+			cluster_results = pd.DataFrame(cluster_results)
+			# weighted sum, since ASW goes from -1 to 1, while NMI goes from 0 to 1
+			cluster_results['weighted_sum'] = 0.5 * cluster_results['ASW'] + cluster_results['NMI']
+			idxmax = cluster_results['weighted_sum'].idxmax()
+			best_cluster_score = cluster_results.loc[idxmax]
+			experiment.log_metrics({'ASW': best_cluster_score['ASW'],
+									'NMI': best_cluster_score['NMI']},
+								   epoch=model.epoch)
 		experiment.end()
 
 	return model.best_optimization_metric
