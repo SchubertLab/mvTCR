@@ -72,8 +72,7 @@ def objective(trial):
 		adata = adata[(adata.obs['binding_name'].isin(tcr.constants.DONOR_SPECIFIC_ANTIGENS[args.donor]))]
 	experiment.log_parameter('donors', adata.obs['donor'].unique().astype(str))
 
-	model = init_model(params, model_type=args.model, adata=adata, dataset_name='10x', use_cov=args.use_cov,
-					   conditional=args.conditional)
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='10x', conditional=args.conditional)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -167,7 +166,7 @@ def objective(trial):
 	if model.best_knn_metric == -1:
 		return None
 
-	return model.best_knn_metric
+	return model.best_loss
 
 
 parser = argparse.ArgumentParser()
@@ -182,9 +181,12 @@ parser.add_argument('--balanced_sampling', type=str, default=None)
 parser.add_argument('--donor', type=str, default='all', choices=['all', '1', '2', '3', '4'])
 parser.add_argument('--without_non_binder', action='store_true')
 parser.add_argument('--conditional', type=str, default=None)
-parser.add_argument('--use_cov', action='store_true', help='If flag is set, CoV-weighting is used')
 parser.add_argument('--rna_weight', type=float, default=None)
 args = parser.parse_args()
+
+optimization_params = {
+	'grad_clip': 1.
+}
 
 if args.name is not None:
 	suggest_params = importlib.import_module(f'{args.name}').suggest_params
@@ -195,7 +197,7 @@ else:
 	init_params = importlib.import_module(f'10x_{args.model.lower()}').init_params
 	name = f'10x_{args.model}{args.suffix}'
 
-name = name + ('_CoV' if args.use_cov else '') + (f'_cond_{args.conditional}' if args.conditional is not None else '')
+name = name + (f'_cond_{args.conditional}' if args.conditional is not None else '')
 rna_kld_weight = args.rna_weight
 
 if not os.path.exists(f'../optuna/{name}'):
