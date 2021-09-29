@@ -42,11 +42,11 @@ def objective(trial):
 
 	experiment = utils_train.initialize_comet(params, params_fixed)
 
-	adata = utils_train.load_data('BCC')
+	adata = utils_train.load_data('bcc')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
 	model = utils_train.init_model(params, model_type=params_fixed['model'], adata=adata,
-								   dataset_name='BCC', conditional=params_fixed['conditional'],
+								   dataset_name='bcc', conditional=params_fixed['conditional'],
 								   optimization_mode='PseudoMetric', optimization_mode_params=optimization_params)
 
 	utils_train.train_call(model, params, params_fixed, experiment)
@@ -108,7 +108,7 @@ rna_kld_weight = args.rna_weight
 
 params_fixed = {
 	'comet': True,
-	'workspace': 'BCC',
+	'workspace': 'bcc',
 	'metadata': ['treatment', 'response', 'patient', 'cluster_tcr', 'cluster', 'clonotype'],
 	'validate_every': 1,
 	'save_every': 1,
