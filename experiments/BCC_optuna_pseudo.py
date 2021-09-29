@@ -84,6 +84,23 @@ def objective(trial):
 			figs = tcr.utils.plot_umap_list(train_latent, title=name + '_train_best_metric', color_groups=color_groups)
 			for fig, color_group in zip(figs, color_groups):
 				experiment.log_figure(figure_name=name + '_train_recon_' + color_group, figure=fig, step=model.epoch)
+
+		if os.path.exists(os.path.join(save_path, f'{name}_best_model_by_metric.pt')):
+			# UMAP
+			print('UMAP for best metric loss model on val')
+			model.load(os.path.join(save_path, f'{name}_best_model_by_metric.pt'))
+			val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=1024, metadata=color_groups)
+			figs = tcr.utils.plot_umap_list(val_latent, title=name + '_val_best_metric', color_groups=color_groups)
+			for fig, color_group in zip(figs, color_groups):
+				experiment.log_figure(figure_name=name + '_val_recon_' + color_group, figure=fig, step=model.epoch)
+
+			print('UMAP for best metric loss model on train')
+			model.load(os.path.join(save_path, f'{name}_best_model_by_metric.pt'))
+			train_latent = model.get_latent([adata[adata.obs['set'] == 'train']], batch_size=1024,
+											metadata=color_groups)
+			figs = tcr.utils.plot_umap_list(train_latent, title=name + '_train_best_metric', color_groups=color_groups)
+			for fig, color_group in zip(figs, color_groups):
+				experiment.log_figure(figure_name=name + '_train_recon_' + color_group, figure=fig, step=model.epoch)
 		experiment.end()
 
 	return model.best_optimization_metric
