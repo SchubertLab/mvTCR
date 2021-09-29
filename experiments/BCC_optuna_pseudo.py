@@ -13,13 +13,10 @@ sys.path.append('../config_optuna')
 import tcr_embedding as tcr
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 from tcr_embedding.evaluation.Clustering import run_clustering_evaluation
-from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
 
 import tcr_embedding.utils_training as utils_train
 
 import torch
-import numpy as np
-import random
 
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -45,17 +42,16 @@ def objective(trial):
 
 	experiment = utils_train.initialize_comet(params, params_fixed)
 
-	adata = utils_train.load_data('haniffa')
+	adata = utils_train.load_data('BCC')
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
 	model = utils_train.init_model(params, model_type=params_fixed['model'], adata=adata,
-								   dataset_name='haniffa', conditional=params_fixed['conditional'],
+								   dataset_name='BCC', conditional=params_fixed['conditional'],
 								   optimization_mode='PseudoMetric', optimization_mode_params=optimization_params)
 
 	utils_train.train_call(model, params, params_fixed, experiment)
 
-	color_groups = ['Site', 'patient_id', 'Sex', 'full_clustering', 'clonotype', 'initial_clustering', 'Swab_result',
-					'Status',  'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome']
+	color_groups = ['treatment', 'response', 'patient', 'cluster_tcr', 'cluster', 'clonotype']
 	if os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
 		# UMAP
 		print('UMAP for best reconstruction loss model on val')
@@ -88,26 +84,6 @@ def objective(trial):
 			figs = tcr.utils.plot_umap_list(train_latent, title=name + '_train_best_metric', color_groups=color_groups)
 			for fig, color_group in zip(figs, color_groups):
 				experiment.log_figure(figure_name=name + '_train_recon_' + color_group, figure=fig, step=model.epoch)
-
-			print('Cluster score evaluation')
-			test_embedding_func = get_model_prediction_function(model,
-																batch_size=1024)  # helper function for evaluation function
-			cluster_results = []
-			for resolution in [0.01, 0.1, 1.0]:
-				cluster_result = run_clustering_evaluation(adata, test_embedding_func, 'train',
-														   name_label='full_clustering',
-														   cluster_params={'resolution': resolution,
-																		   'num_neighbors': 15}, visualize=False)
-				cluster_results.append(cluster_result)
-
-			cluster_results = pd.DataFrame(cluster_results)
-			# weighted sum, since ASW goes from -1 to 1, while NMI goes from 0 to 1
-			cluster_results['weighted_sum'] = 0.5 * cluster_results['ASW'] + cluster_results['NMI']
-			idxmax = cluster_results['weighted_sum'].idxmax()
-			best_cluster_score = cluster_results.loc[idxmax]
-			experiment.log_metrics({'ASW': best_cluster_score['ASW'],
-									'NMI': best_cluster_score['NMI']},
-								   epoch=model.epoch)
 		experiment.end()
 
 	return model.best_optimization_metric
@@ -117,7 +93,7 @@ utils_train.fix_seeds()
 args = utils_train.parse_arguments()
 
 optimization_params = {
-	'prediction_labels': ['full_clustering', 'clonotype']
+	'prediction_labels': ['cluster', 'clonotype']
 }
 
 
@@ -132,9 +108,8 @@ rna_kld_weight = args.rna_weight
 
 params_fixed = {
 	'comet': True,
-	'workspace': 'haniffa2',
-	'metadata': ['Site', 'patient_id', 'Sex', 'full_clustering', 'clonotype', 'initial_clustering', 'Swab_result',
-					'Status',  'Status_on_day_collection_summary', 'Worst_Clinical_Status', 'Outcome'],
+	'workspace': 'BCC',
+	'metadata': ['treatment', 'response', 'patient', 'cluster_tcr', 'cluster', 'clonotype'],
 	'validate_every': 1,
 	'save_every': 1,
 }
