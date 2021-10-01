@@ -48,7 +48,7 @@ def objective(trial):
 	# Init Comet-ML
 	with open('../comet_ml_key/API_key.txt') as f:
 		COMET_ML_KEY = f.read()
-	experiment = Experiment(api_key=COMET_ML_KEY, workspace='tcr', project_name=name)
+	experiment = Experiment(api_key=COMET_ML_KEY, workspace='10x2', project_name=name)
 	experiment.log_parameters(params)
 	experiment.log_parameters(params['scRNA_model_hyperparams'], prefix='scRNA')
 	experiment.log_parameters(params['seq_model_hyperparams'], prefix='seq')
@@ -72,7 +72,8 @@ def objective(trial):
 		adata = adata[(adata.obs['binding_name'].isin(tcr.constants.DONOR_SPECIFIC_ANTIGENS[args.donor]))]
 	experiment.log_parameter('donors', adata.obs['donor'].unique().astype(str))
 
-	model = init_model(params, model_type=args.model, adata=adata, dataset_name='10x', conditional=args.conditional)
+	model = init_model(params, model_type=args.model, adata=adata, dataset_name='10x', conditional=args.conditional,
+					   optimization_mode=optimization_mode, optimization_mode_params=optimization_params)
 	n_epochs = args.n_epochs * params['batch_size'] // 256  # adjust that different batch_size still have same number of epochs
 	early_stop = args.early_stop * params['batch_size'] // 256
 	epoch2step = 256 / params['batch_size']  # normalization factor of epoch -> step, as one epoch with different batch_size results in different numbers of iterations
@@ -107,15 +108,16 @@ def objective(trial):
 	# For visualization purpose, else the scanpy plot script thinks the rare specificities are still there and the colors get skewed
 	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
 
-	if os.path.exists(os.path.join(save_path, f'{name}_best_knn_model.pt')) and os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
+	if os.path.exists(os.path.join(save_path, f'{name}_best_knn_model.pt')) or os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
 		# Val UMAP
 		print('UMAP for best f1 score model on val')
-		model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
-		val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
-		fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_val_best_f1')
-		experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor, step=model.epoch)
-		experiment.log_figure(figure_name=name+'_val_best_f1_clonotype', figure=fig_clonotype, step=model.epoch)
-		experiment.log_figure(figure_name=name+'_val_best_f1_antigen', figure=fig_antigen, step=model.epoch)
+		if optimization_mode != 'Reconstruction':
+			model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
+			val_latent = model.get_latent([adata[adata.obs['set'] == 'val']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
+			fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_val_best_f1')
+			experiment.log_figure(figure_name=name+'_val_best_f1_donor', figure=fig_donor, step=model.epoch)
+			experiment.log_figure(figure_name=name+'_val_best_f1_clonotype', figure=fig_clonotype, step=model.epoch)
+			experiment.log_figure(figure_name=name+'_val_best_f1_antigen', figure=fig_antigen, step=model.epoch)
 
 		print('UMAP for best reconstruction loss model on val')
 		model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
@@ -126,13 +128,14 @@ def objective(trial):
 		experiment.log_figure(figure_name=name + '_val_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
 		# Train UMAP
-		print('UMAP for best f1 score model on train')
-		model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
-		val_latent = model.get_latent([adata[adata.obs['set'] == 'train']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
-		fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_train_best_f1')
-		experiment.log_figure(figure_name=name+'_train_best_f1_donor', figure=fig_donor, step=model.epoch)
-		experiment.log_figure(figure_name=name+'_train_best_f1_clonotype', figure=fig_clonotype, step=model.epoch)
-		experiment.log_figure(figure_name=name+'_train_best_f1_antigen', figure=fig_antigen, step=model.epoch)
+		if optimization_mode != 'Reconstruction':
+			print('UMAP for best f1 score model on train')
+			model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
+			val_latent = model.get_latent([adata[adata.obs['set'] == 'train']], batch_size=512, metadata=['binding_name', 'clonotype', 'donor'])
+			fig_donor, fig_clonotype, fig_antigen = tcr.utils.plot_umap(val_latent, title=name+'_train_best_f1')
+			experiment.log_figure(figure_name=name+'_train_best_f1_donor', figure=fig_donor, step=model.epoch)
+			experiment.log_figure(figure_name=name+'_train_best_f1_clonotype', figure=fig_clonotype, step=model.epoch)
+			experiment.log_figure(figure_name=name+'_train_best_f1_antigen', figure=fig_antigen, step=model.epoch)
 
 		print('UMAP for best reconstruction loss model on train')
 		model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
@@ -143,18 +146,22 @@ def objective(trial):
 		experiment.log_figure(figure_name=name + '_train_best_recon_antigen', figure=fig_antigen, step=model.epoch)
 
 		##################### EVALUATE KNN ON TEST #######################
-		model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
+		if optimization_mode != 'Reconstruction':
+			model.load(os.path.join(save_path, f'{name}_best_knn_model.pt'))
+		else:
+			model.load(os.path.join(save_path, f'{name}_best_rec_model.pt'))
+
 		test_embedding_func = get_model_prediction_function(model, batch_size=1024)  # helper function for evaluation functions
 
 		# kNN antigen specificity imputation
-		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='test', use_non_binder=False,
+		summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val', use_non_binder=False,
 											use_reduced_binders=True, num_neighbors=5)
 		metrics = summary['knn']
 		for antigen, metric in metrics.items():
 			if antigen != 'accuracy':
-				experiment.log_metrics(metric, prefix='test '+antigen, step=-1, epoch=-1)
+				experiment.log_metrics(metric, prefix='val '+antigen, step=-1, epoch=-1)
 			else:
-				experiment.log_metric('test accuracy', metric, step=-1, epoch=-1)
+				experiment.log_metric('val accuracy', metric, step=-1, epoch=-1)
 
 	else:
 		print('Models not saved')
@@ -163,9 +170,9 @@ def objective(trial):
 	experiment.end()
 
 	# in case kNN failed from the beginning
-	if model.best_knn_metric == -1:
+	if model.best_knn_metric == -1 and optimization_mode != 'Reconstruction':
 		return None
-
+	print(model.best_loss)
 	return model.best_loss
 
 
@@ -187,6 +194,7 @@ args = parser.parse_args()
 optimization_params = {
 	'grad_clip': 1.
 }
+optimization_mode = 'Reconstruction'
 
 if args.name is not None:
 	suggest_params = importlib.import_module(f'{args.name}').suggest_params
