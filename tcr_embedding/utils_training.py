@@ -39,6 +39,7 @@ def parse_arguments():
     parser.add_argument('--conditional', type=str, default=None)
     parser.add_argument('--without_non_binder', action='store_true')
     parser.add_argument('--rna_weight', type=float, default=None)
+    parser.add_argument('--holdout_donor', type=str, default=None)
     arguments = parser.parse_args()
     return arguments
 

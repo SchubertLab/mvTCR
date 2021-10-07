@@ -139,6 +139,20 @@ class PoEModelTorch(nn.Module):
 
 		return mu_joint, logvar_joint
 
+	def predict_transcriptome(self, z_shared, conditional=None):
+		"""
+		Predict the transcriptome connected to an shared latent space
+		:param z_shared: torch.tensor, shared latent representation
+		:param conditional:
+		:return: torch.tensor, transcriptome profile
+		"""
+		if conditional is not None:  # more efficient than doing two concatenations
+			cond_emb_vec = self.cond_emb(conditional)
+			z_shared = torch.cat([z_shared, cond_emb_vec], dim=-1)  # shape=[batch_size, zdim+cond_dim]
+		transcriptome_pred = self.rna_vae_decoder(z_shared)
+		transcriptome_pred = self.rna_decoder(transcriptome_pred)
+		return transcriptome_pred
+
 
 class PoEModel(VAEBaseModel):
 	def __init__(self,
@@ -172,7 +186,10 @@ class PoEModel(VAEBaseModel):
 		num_seq_labels = len(aa_to_id)
 
 		if self.conditional is not None:
-			num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			if self.conditional in adatas[0].obsm:
+				num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			else:
+				num_conditional_labels = len(adatas[0].obs[self.conditional].unique())
 			try:
 				cond_dim = params_additional['c_embedding_dim']
 			except:

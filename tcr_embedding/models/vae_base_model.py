@@ -24,7 +24,7 @@ from .base_model import BaseModel
 from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
 from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
-from tcr_embedding.models.scGen import PertubationPredictor
+from tcr_embedding.models.scGen import run_scgen_cross_validation
 from tcr_embedding.models.losses.optimization_modes import init_optimization_mode_params
 
 
@@ -509,7 +509,7 @@ class VAEBaseModel(BaseModel, ABC):
 				if self.optimization_mode == 'PseudoMetric':
 					self.report_pseudo_metric(batch_size, e, epoch2step, comet, save_path, experiment_name)
 				if self.optimization_mode == 'scGen':
-					self.report_scgen(tune, comet, e, epoch2step)
+					self.report_scgen(batch_size, e, epoch2step, comet, save_path, experiment_name)
 
 			if early_stop is not None and no_improvements > early_stop:
 				print('Early stopped')
@@ -598,31 +598,26 @@ class VAEBaseModel(BaseModel, ABC):
 			comet.log_metric('max_pseudo_metric',  self.best_optimization_metric,
 							 step=int(epoch * epoch2step), epoch=epoch)
 
-	def report_scgen(self, tune, comet, epoch, epoch2step):
-		evaluator = PertubationPredictor(self, self.adatas[0], verbosity=0)
-		summary = evaluator.evaluate_pertubation(self.params_additional['pertubation'], {'set': 'val'},
-												 self.params_additional['per_column'],
-												 self.params_additional['indicator'])
-
-		score = summary['top_100_genes']['r_squared']
-
-		if tune is not None:
-			tune.report(scgen=score)
+	def report_scgen(self, batch_size, epoch, epoch2step, comet, save_path, experiment_name):
+		summary = run_scgen_cross_validation(self.adatas[0], self.optimization_mode_params['column_fold'],
+											 self, self.optimization_mode_params['column_perturbation'],
+											 self.optimization_mode_params['indicator_perturbation'],
+											 self.optimization_mode_params['column_cluster'])
+		score = summary['avg_r_squared']
 
 		if comet is not None:
-			comet.log_metrics(summary['all_genes'], prefix='all_genes',
-							  step=int(epoch * epoch2step), epoch=epoch)
-			comet.log_metrics(summary['top_100_genes'], prefix='top_100_genes',
-							  step=int(epoch * epoch2step), epoch=epoch)
-			try:
-				for name, summary in summary['per_cluster'].items():
-					comet.log_metrics(summary, prefix=f'all_genes_{name}',
-									  step=int(epoch * epoch2step), epoch=epoch)
-				for name, summary in summary['per_cluster_top_100'].items():
-					comet.log_metrics(summary, prefix=f'top_100_genes_{name}',
-									  step=int(epoch * epoch2step), epoch=epoch)
-			except KeyError:
-				pass
+			for key, value in summary.items():
+
+				if key == 'avg_r_squared':
+					comet.log_metric(key, value, step=int(epoch*epoch2step), epoch=epoch)
+				else:
+					comet.log_metrics(value, prefix=key, step=int(epoch * epoch2step), epoch=epoch)
+		if self.best_optimization_metric is None or score > self.best_optimization_metric:
+			self.best_optimization_metric = score
+			self.save(os.path.join(save_path, f'{experiment_name}_best_model_by_scGen.pt'))
+			if comet is not None:
+				comet.log_metric('max_scGen_avg_R_squared',  self.best_optimization_metric,
+								 step=int(epoch * epoch2step), epoch=epoch)
 
 	def get_latent(self, adatas, batch_size=256, num_workers=0, names=[], gene_layers=[], seq_keys=[], metadata=[],
 				   device=None, return_mean=True):
@@ -686,13 +681,33 @@ class VAEBaseModel(BaseModel, ABC):
 
 		return sc.AnnData.concatenate(*zs)
 
-	def predict_sc_rna(self, data_in):
-		if not self.poe:
-			joint_encoding = self.model.model.shared_decoder(data_in)
-			prediction_cells = self.model.model.gene_decoder(joint_encoding).detach().cpu().numpy()
-			return prediction_cells
+	def predict_transcriptome_from_latent(self, adata_latent, metadata=None):
+		device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+		if self.conditional is None:
+			dataset = torch.utils.data.TensorDataset(torch.from_numpy(adata_latent.X))
 		else:
-			pass
+			dataset = torch.utils.data.TensorDataset(torch.from_numpy(adata_latent.X),
+													 torch.from_numpy(adata_latent.obsm[self.conditional]))
+		dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024)
+		transcriptomes = []
+		with torch.no_grad():
+			model = self.model.to(device)
+			model.eval()
+			for batch in dataloader:
+				if self.conditional is not None:
+					batch = batch[0].to(device)
+					conditional = batch[1].to(device)
+				else:
+					batch = batch[0].to(device)
+					conditional = None
+				batch_transcriptome = model.predict_transcriptome(batch, conditional)
+				batch_transcriptome = sc.AnnData(batch_transcriptome.detach().cpu().numpy())
+				transcriptomes.append(batch_transcriptome)
+		transcriptomes = sc.AnnData.concatenate(*transcriptomes)
+		if metadata is not None:
+			transcriptomes.obs[metadata] = adata_latent.obs[metadata]
+		return transcriptomes
 
 	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None,
 						label_key=None):

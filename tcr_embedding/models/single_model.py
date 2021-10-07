@@ -109,6 +109,23 @@ class SingleModelTorch(nn.Module):
 		z = mu + (eps * std)  # sampling as if coming from the input space
 		return z
 
+	def predict_transcriptome(self, z_shared, conditional=None):
+		"""
+		Predict the transcriptome connected to an shared latent space
+		:param z_shared: torch.tensor, shared latent representation
+		:param conditional:
+		:return: torch.tensor, transcriptome profile
+		"""
+		if conditional is not None:  # more efficient than doing two concatenations
+			cond_emb_vec = self.cond_emb(conditional)
+			z_shared = torch.cat([z_shared, cond_emb_vec], dim=-1)  # shape=[batch_size, zdim+cond_dim]
+		z_shared = self.shared_decoder(z_shared)
+		if self.scRNA_model_arch != 'None' and self.seq_model_arch == 'None':
+			transcriptome_pred = self.gene_decoder(z_shared)
+		else:
+			raise ValueError('Trying to predict transcriptome with a model without rna')
+		return transcriptome_pred
+
 
 class SingleModel(VAEBaseModel):
 	def __init__(self,
@@ -141,7 +158,10 @@ class SingleModel(VAEBaseModel):
 		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
 		if self.conditional is not None:
-			num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			if self.conditional in adatas[0].obsm:
+				num_conditional_labels = adatas[0].obsm[self.conditional].shape[1]
+			else:
+				num_conditional_labels = len(adatas[0].obs[self.conditional].unique())
 			try:
 				cond_dim = params_additional['c_embedding_dim']
 			except:

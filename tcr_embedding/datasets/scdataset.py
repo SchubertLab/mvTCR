@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from scipy import sparse
 
+
 class TCRDataset(torch.utils.data.Dataset):
 	def __init__(
 			self,
