@@ -12,9 +12,6 @@ import numpy as np
 
 from datetime import datetime
 
-import ray
-from ray import tune
-
 import tcr_embedding.models as models
 
 
@@ -58,6 +55,8 @@ def load_data(source='10x'):
         path_source = '10x_CD8TC/v6_supervised.h5ad'
     elif source == 'bcc':
         path_source = 'BCC/06_bcc_highly_var_5000.h5ad'
+    elif source == 'scc':
+        path_source = 'SCC/06_scc_highly_var_5000.h5ad'
     elif source == 'covid':
         path_source = 'Covid/04_covid_highly_var_5000.h5ad'
     elif source == 'haniffa':
