@@ -48,7 +48,7 @@ def objective(trial):
 
 	utils_train.train_call(model, params, params_fixed, experiment)
 
-	color_groups = ['treatment', 'response', 'patient', 'cluster_tcr', 'cluster', 'clonotype']
+	color_groups = ['treatment', 'response', 'patient', 'cluster', 'clonotype']
 	if os.path.exists(os.path.join(save_path, f'{name}_best_rec_model.pt')):
 		# UMAP
 		print('UMAP for best reconstruction loss model')
@@ -85,7 +85,7 @@ rna_kld_weight = args.rna_weight
 params_fixed = {
 	'comet': True,
 	'workspace': 'scc-scgen',
-	'metadata': ['treatment', 'response', 'patient', 'cluster_tcr', 'cluster', 'clonotype'],
+	'metadata': ['treatment', 'response', 'patient', 'cluster', 'clonotype'],
 	'validate_every': 1,
 	'save_every': 1,
 }
