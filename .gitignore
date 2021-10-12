@@ -24,7 +24,5 @@ optuna
 baseline/TESSA/
 baseline/tmp
 baseline/results
-*/*.pyc
-*/*/*.pyc
-*/*/*/*.pyc
-*/*/*/*/*.pyc
+**/*.pyc
+**/__pycache__/
