@@ -4,7 +4,6 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import scanpy as sc
 import os
-import pickle
 from datetime import datetime
 import argparse
 import importlib
@@ -119,13 +118,13 @@ def objective(params, checkpoint_dir=None, adata=None):
 	adata = adata[adata.obs['set'] != 'test']  # This needs to be inside the function, ray can't deal with it outside
 
 	if 'single' in params['name'] and 'separate' not in params['name']:
-		init_model = tcr.models.single_model.SingleModel
+		init_model = tcr_embedding.models.mixture_modules.single_model.SingleModel
 	elif 'moe' in params['name']:
-		init_model = tcr.models.moe.MoEModel
+		init_model = tcr_embedding.models.mixture_modules.moe.MoEModel
 	elif 'poe' in params['name']:
-		init_model = tcr.models.poe.PoEModel
+		init_model = tcr_embedding.models.mixture_modules.poe.PoEModel
 	elif 'separate' in params['name']:
-		init_model = tcr.models.separate_model.SeparateModel
+		init_model = tcr_embedding.models.mixture_modules.separate_model.SeparateModel
 	else:
 		init_model = tcr.models.joint_model.JointModel
 	# Init Model

@@ -1,4 +1,3 @@
-import comet_ml
 from comet_ml import Experiment
 import warnings
 import scanpy as sc
@@ -9,8 +8,6 @@ import argparse
 import random
 import torch
 import numpy as np
-
-from datetime import datetime
 
 import tcr_embedding.models as models
 
@@ -211,7 +208,7 @@ def initialize_comet(params_hpo, params_fixed):
 
     experiment_name = params_fixed['name']
 
-    path_key = os.path.join(os.path.dirname(__file__), '../comet_ml_key/API_key.txt')
+    path_key = os.path.join(os.path.dirname(__file__), '../config/API_key.txt')
     with open(path_key) as f:
         comet_key = f.read()
     experiment = Experiment(api_key=comet_key, workspace=params_fixed['workspace'], project_name=experiment_name)
@@ -239,13 +236,13 @@ def select_model_by_name(model_name):
     :return: class of the corresponding model
     """
     if 'single' in model_name and 'separate' not in model_name:
-        init_model = models.single_model.SingleModel
+        init_model = tcr_embedding.models.mixture_modules.single_model.SingleModel
     elif 'moe' in model_name:
-        init_model = models.moe.MoEModel
+        init_model = tcr_embedding.models.mixture_modules.moe.MoEModel
     elif 'poe' in model_name:
-        init_model = models.poe.PoEModel
+        init_model = tcr_embedding.models.mixture_modules.poe.PoEModel
     elif 'separate' in model_name:
-        init_model = models.separate_model.SeparateModel
+        init_model = tcr_embedding.models.mixture_modules.separate_model.SeparateModel
     else:
         init_model = models.joint_model.JointModel
     return init_model
@@ -254,13 +251,13 @@ def select_model_by_name(model_name):
 def init_model(params, model_type, adata, dataset_name, conditional=None, optimization_mode='Reconstruction',
                optimization_mode_params=None):
     if model_type.lower() == 'rna':
-        init_model_func = models.single_model.SingleModel
+        init_model_func = tcr_embedding.models.mixture_modules.single_model.SingleModel
     elif model_type.lower() == 'poe':
-        init_model_func = models.poe.PoEModel
+        init_model_func = tcr_embedding.models.mixture_modules.poe.PoEModel
     elif model_type.lower() == 'concat' or model_type.lower() == 'tcr':
-        init_model_func = models.separate_model.SeparateModel
+        init_model_func = tcr_embedding.models.mixture_modules.separate_model.SeparateModel
     elif model_type.lower() == 'single':
-        init_model_func = models.single_model.SingleModel
+        init_model_func = tcr_embedding.models.mixture_modules.single_model.SingleModel
     else:
         raise NotImplementedError(f'The specified model {model_type} is not implemented, please try one of the follow ["RNA", "TCR", "concat", "PoE", "single"]')
 

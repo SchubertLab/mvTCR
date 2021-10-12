@@ -18,14 +18,12 @@ from abc import ABC, abstractmethod
 from tcr_embedding.datasets.scdataset import TCRDataset
 from .losses.nb import NB
 from .losses.kld import KLD
-from .losses.CoVWeightening import CoVWeighter
 
-from .base_model import BaseModel
+from tcr_embedding.models.mixture_modules.base_model import BaseModel
 from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
 from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
 from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
 from tcr_embedding.models.scGen import run_scgen_cross_validation
-from tcr_embedding.models.losses.optimization_modes import init_optimization_mode_params
 
 
 class VAEBaseModel(BaseModel, ABC):
@@ -148,7 +146,6 @@ class VAEBaseModel(BaseModel, ABC):
 			  continue_training=False,
 			  device=None,
 			  comet=None,
-			  tune=None
 			  ):
 		"""
 		Train the model for n_epochs
@@ -180,10 +177,6 @@ class VAEBaseModel(BaseModel, ABC):
 			losses = ['MSE', 'CE']
 
 		# initialize Coefficient of Variance weighting method if required
-		if 'CoV' in self.names[0]:
-			cov_weighter = CoVWeighter(comet=comet, device=device)
-		else:
-			cov_weighter = None
 		if metadata is None:
 			metadata = []
 
@@ -287,8 +280,6 @@ class VAEBaseModel(BaseModel, ABC):
 			cls_loss_train_total = []
 			labels_gt_list = []
 			labels_pred_list = []
-			cov_TCR_weights = []
-			cov_scRNA_weights = []
 
 			self.model.train()
 			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels, conditional in train_dataloader:
@@ -311,15 +302,6 @@ class VAEBaseModel(BaseModel, ABC):
 
 				loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights,
 																 scRNA_criterion, TCR_criterion, size_factor)
-				if cov_weighter is not None:
-					# first remove the loss weights from the individual losses
-					weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=True)
-					scRNA_loss = scRNA_loss / (loss_weights[0] + 1e-8) * weight_rna
-					TCR_loss = TCR_loss / (loss_weights[1] + 1e-8) * weight_tcr
-					# second calculate new weights based on cov
-					loss = TCR_loss + scRNA_loss
-					cov_TCR_weights.append(weight_tcr)
-					cov_scRNA_weights.append(weight_rna)
 
 				loss = loss + KLD_loss
 				if self.model_type == 'supervised':
@@ -350,13 +332,6 @@ class VAEBaseModel(BaseModel, ABC):
 				TCR_loss_train_total = torch.stack(TCR_loss_train_total).mean().item()
 				KLD_loss_train_total = torch.stack(KLD_loss_train_total).mean().item()
 				cls_loss_train_total = torch.stack(cls_loss_train_total).mean().item()
-				if len(cov_scRNA_weights) != 0:
-					cov_scRNA_weights = torch.stack(cov_scRNA_weights).mean().item()
-					cov_TCR_weights = torch.stack(cov_TCR_weights).mean().item()
-					if comet is not None:
-						comet.log_metrics({'CoV_scRNA_weight_norm': cov_scRNA_weights,
-										   'CoV_TCR_weight_norm': cov_TCR_weights},
-										  step=int(e * epoch2step), epoch=e)
 
 				if comet is not None:
 					comet.log_metrics({'Train Loss': loss_train_total,
@@ -406,13 +381,6 @@ class VAEBaseModel(BaseModel, ABC):
 						loss, scRNA_loss, TCR_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq,
 																		 loss_weights, scRNA_criterion, TCR_criterion,
 																		 size_factor)
-						if cov_weighter is not None:
-							# first remove the loss weights from the individual losses
-							weight_tcr, weight_rna = cov_weighter.get_weights(TCR_loss, scRNA_loss, is_train=False)
-							scRNA_loss = scRNA_loss / (loss_weights[0] + 1e-8) * weight_rna
-							TCR_loss = TCR_loss / (loss_weights[1] + 1e-8) * weight_tcr
-							# second calculate new weights based on cov
-							loss = TCR_loss + scRNA_loss
 
 						loss = loss + KLD_loss
 						if self.model_type == 'supervised':
@@ -485,9 +453,6 @@ class VAEBaseModel(BaseModel, ABC):
 							self.best_cls_metric = metrics['weighted avg']['f1-score']
 							self.save(os.path.join(save_path, f'{experiment_name}_best_cls_model.pt'))
 
-						if tune is not None:
-							tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
-
 					if comet is not None:
 						comet.log_metrics({'Val Loss': loss_val_total,
 										   'Val scRNA Loss': scRNA_loss_val_total,
@@ -503,9 +468,9 @@ class VAEBaseModel(BaseModel, ABC):
 			# kNN evaluation
 			if save_every is not None and e % save_every == 0:
 				if self.optimization_mode == 'Prediction':
-					self.report_validation_prediction(batch_size, e, epoch2step, tune, comet, save_path, experiment_name, pbar)
+					self.report_validation_prediction(batch_size, e, epoch2step, comet, save_path, experiment_name, pbar)
 				if self.optimization_mode == 'Reconstruction':
-					self.report_reconstruction(loss_val_total, tune)
+					self.report_reconstruction(loss_val_total)
 				if self.optimization_mode == 'PseudoMetric':
 					self.report_pseudo_metric(batch_size, e, epoch2step, comet, save_path, experiment_name)
 				if self.optimization_mode == 'scGen':
@@ -519,17 +484,16 @@ class VAEBaseModel(BaseModel, ABC):
 				print(f'Loss became NaN, Loss: {loss}')
 				return
 
-	def report_validation_prediction(self, batch_size, epoch, epoch2step, tune, comet, save_path, experiment_name, pbar):
+	def report_validation_prediction(self, batch_size, epoch, epoch2step, comet, save_path, experiment_name, pbar):
 		"""
 		Report the objective metric of the 10x dataset for hyper parameter optimization.
 		:param batch_size: Batch size for creating the validation latent space
 		:param epoch: epoch number for logging
 		:param epoch2step: conversion parameter between epoch and steps
-		:param tune: RayTune object to report to
 		:param comet: Comet experiments for logging validation
 		:param save_path: Path for saving trained models
 		:param experiment_name: Name of the experiment for logging
-		:return: Reports to RayTune log files and externally to comet, saves model.
+		:return: Reports externally to comet, saves model.
 		"""
 		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
 		try:
@@ -538,13 +502,9 @@ class VAEBaseModel(BaseModel, ABC):
 												label_pred=self.optimization_mode_params['prediction_column'])
 		except:
 			print(f'kNN did not work')
-			if tune is not None:
-				tune.report(weighted_f1=0.0)
 			return
 
 		metrics = summary['knn']
-		if tune is not None:
-			tune.report(weighted_f1=metrics['weighted avg']['f1-score'])
 
 		if comet is not None:
 			for antigen, metric in metrics.items():
@@ -558,15 +518,14 @@ class VAEBaseModel(BaseModel, ABC):
 			self.save(os.path.join(save_path, f'{experiment_name}_best_knn_model.pt'))
 			pbar.set_postfix(best_f1_score=self.best_knn_metric, best_epoch=epoch)
 
-	def report_reconstruction(self, validation_loss, tune):
+	def report_reconstruction(self, validation_loss):
 		"""
 		Report the reconstruction loss as metric for hyper parameter optimization.
 		:param validation_loss: Reconstruction loss on the validation set
-		:param tune: Ray Tune experiment
-		:return: Reports to RayTune files
+		:return: Reports to files
 		"""
-		if tune is not None:
-			tune.report(reconstruction=validation_loss)
+		# todo
+		pass
 
 	def report_pseudo_metric(self, batch_size, epoch, epoch2step, comet, save_path, experiment_name):
 		"""

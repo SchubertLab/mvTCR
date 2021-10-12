@@ -1,9 +1,1 @@
-from . import joint_model
-from . import single_model
-from . import deep_tcr
-#from . import semi_supervised
-from . import supervised
-# from . import mmvae
-from . import separate_model
-from . import poe
-from . import moe
+from .mixture_modules import poe, moe, separate_model, single_model

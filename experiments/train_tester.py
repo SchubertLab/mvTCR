@@ -46,7 +46,7 @@ def create_model(datas, params):
 
 def create_comet_experiment(params):
     experiment_name = 'test_01'
-    with open('../comet_ml_key/API_key.txt') as f:
+    with open('../config/API_key.txt') as f:
         COMET_ML_KEY = f.read()
     experiment = Experiment(api_key=COMET_ML_KEY, workspace='bcc', project_name='test')
     experiment.log_parameters(params)
