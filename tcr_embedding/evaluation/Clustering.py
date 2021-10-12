@@ -1,7 +1,7 @@
 import random
 import tcr_embedding.evaluation.WrapperFunctions as Wrapper
 import tcr_embedding.evaluation.Metrics as Metrics
-from config.constants import ANTIGEN_COLORS
+from manuscript.constants import ANTIGEN_COLORS
 
 import scanpy as sc
 from anndata import AnnData
