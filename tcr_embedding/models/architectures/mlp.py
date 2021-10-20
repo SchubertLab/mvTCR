@@ -1,11 +1,17 @@
-# https://github.com/theislab/multigrate
+"""
+This trigonometric positional embedding was adapted from:
+Title: Multigrate
+Date: 17th March 2021
+Availability: https://github.com/theislab/multigrate
+"""
 from torch import nn
+
 
 class MLP(nn.Module):
     def __init__(self,
                  n_inputs,
                  n_outputs,
-                 hiddens=[],
+                 hiddens=None,
                  activation='relu',
                  output_activation='linear',
                  dropout=None,
@@ -15,7 +21,7 @@ class MLP(nn.Module):
 
         # create network architecture
         layers = []
-        if hiddens == []:  # no hidden layers
+        if hiddens is None:  # no hidden layers
             layers.append(self._fc(n_inputs, n_outputs, activation=output_activation,
                                    dropout=dropout if regularize_last_layer else None,
                                    batch_norm=regularize_last_layer))

@@ -14,7 +14,8 @@ from tcr_embedding.datasets.scdataset import TCRDataset
 
 class PoEModelTorch(nn.Module):
 	def __init__(self, xdim, hdim, zdim, num_seq_labels, shared_hidden, activation, dropout, batch_norm, seq_model_arch,
-				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim, cond_input=False):
+				 seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams, num_conditional_labels, cond_dim,
+				 cond_input=False):
 		super(PoEModelTorch, self).__init__()
 
 		seq_models = {'CNN': [CNNEncoder, CNNDecoder],
@@ -23,10 +24,10 @@ class PoEModelTorch(nn.Module):
 
 		scRNA_models = {'MLP': [build_mlp_encoder, build_mlp_decoder]}
 
-		self.alpha_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim//2, num_seq_labels)  # h//2 to avoid combined tcr dominate scRNA
+		self.alpha_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim // 2, num_seq_labels)
 		self.alpha_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim, num_seq_labels)
 
-		self.beta_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim//2, num_seq_labels)
+		self.beta_encoder = seq_models[seq_model_arch][0](seq_model_hyperparams, hdim // 2, num_seq_labels)
 		self.beta_decoder = seq_models[seq_model_arch][1](seq_model_hyperparams, hdim, num_seq_labels)
 
 		self.rna_encoder = scRNA_models[scRNA_model_arch][0](scRNA_model_hyperparams, xdim, hdim)
@@ -37,11 +38,17 @@ class PoEModelTorch(nn.Module):
 		self.cond_input = cond_input
 		cond_input_dim = cond_dim if cond_input else 0
 
-		self.tcr_vae_encoder = MLP(hdim+cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.tcr_vae_decoder = MLP(zdim+cond_dim, hdim, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		self.tcr_vae_encoder = MLP(hdim + cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout,
+								   batch_norm,
+								   regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.tcr_vae_decoder = MLP(zdim + cond_dim, hdim, shared_hidden[::-1], activation, activation, dropout,
+								   batch_norm, regularize_last_layer=True)
 
-		self.rna_vae_encoder = MLP(hdim+cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout, batch_norm, regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
-		self.rna_vae_decoder = MLP(zdim+cond_dim, hdim, shared_hidden[::-1], activation, activation, dropout, batch_norm, regularize_last_layer=True)
+		self.rna_vae_encoder = MLP(hdim + cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout,
+								   batch_norm,
+								   regularize_last_layer=False)  # zdim*2 because we predict mu and sigma simultaneously
+		self.rna_vae_decoder = MLP(zdim + cond_dim, hdim, shared_hidden[::-1], activation, activation, dropout,
+								   batch_norm, regularize_last_layer=True)
 
 		# used for NB loss
 		self.theta = torch.nn.Parameter(torch.randn(xdim))
@@ -82,12 +89,13 @@ class PoEModelTorch(nn.Module):
 
 		# Predict Latent space
 		z_rna_ = self.rna_vae_encoder(h_rna)  # shape=[batch_size, zdim*2]
-		mu_rna, logvar_rna = z_rna_[:, :z_rna_.shape[1]//2], z_rna_[:, z_rna_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		mu_rna, logvar_rna = z_rna_[:, :z_rna_.shape[1] // 2], z_rna_[:, z_rna_.shape[
+																			 1] // 2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z_rna = self.reparameterize(mu_rna, logvar_rna)  # shape=[batch_size, zdim]
 
-
 		z_tcr_ = self.tcr_vae_encoder(h_tcr)  # shape=[batch_size, zdim*2]
-		mu_tcr, logvar_tcr = z_tcr_[:, :z_tcr_.shape[1]//2], z_tcr_[:, z_tcr_.shape[1]//2:]  # mu.shape = logvar.shape = [batch_size, zdim]
+		mu_tcr, logvar_tcr = z_tcr_[:, :z_tcr_.shape[1] // 2], z_tcr_[:, z_tcr_.shape[
+																			 1] // 2:]  # mu.shape = logvar.shape = [batch_size, zdim]
 		z_tcr = self.reparameterize(mu_tcr, logvar_tcr)  # shape=[batch_size, zdim]
 
 		# Predict joint latent space using PoE
@@ -130,7 +138,8 @@ class PoEModelTorch(nn.Module):
 
 	def product_of_experts(self, mu_rna, mu_tcr, logvar_rna, logvar_tcr):
 		# formula: var_joint = inv(inv(var_prior) + sum(inv(var_modalities)))
-		logvar_joint = 1.0 / torch.exp(logvar_rna) + 1.0 / torch.exp(logvar_tcr) + 1.0  # sum up all inverse vars, logvars first needs to be converted to var, last 1.0 is coming from the prior
+		logvar_joint = 1.0 / torch.exp(logvar_rna) + 1.0 / torch.exp(
+			logvar_tcr) + 1.0  # sum up all inverse vars, logvars first needs to be converted to var, last 1.0 is coming from the prior
 		logvar_joint = torch.log(1.0 / logvar_joint)  # inverse and convert to logvar
 
 		# formula: mu_joint = (mu_prior*inv(var_prior) + sum(mu_modalities*inv(var_modalities))) * var_joint, where mu_prior = 0.0
@@ -156,33 +165,21 @@ class PoEModelTorch(nn.Module):
 
 class PoEModel(VAEBaseModel):
 	def __init__(self,
-				 adatas,  # adatas containing gene expression and TCR-seq
+				 adata,
 				 aa_to_id,
-				 seq_model_arch,  # seq model architecture
-				 seq_model_hyperparams,  # dict of seq model hyperparameters
-				 scRNA_model_arch,
-				 scRNA_model_hyperparams,
-				 zdim,  # zdim
-				 hdim,  # hidden dimension of encoder for each modality
-				 activation,
-				 dropout,
-				 batch_norm,
-				 shared_hidden=[],
-				 names=[],
-				 gene_layers=[],
-				 seq_keys=[],
-				 params_additional=None,
+				 params_architecture,
+				 model_type='poe',
 				 conditional=None,
 				 optimization_mode='Reconstruction',
-				 optimization_mode_params=None
+				 optimization_mode_params=None,
+				 device=None,
 				 ):
-		super(PoEModel, self).__init__(adatas, aa_to_id, seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
-									   zdim, hdim, activation, dropout, batch_norm, shared_hidden, names, gene_layers, seq_keys, params_additional, conditional,
-									   optimization_mode=optimization_mode, optimization_mode_params=optimization_mode_params)
+		super(PoEModel, self).__init__(adata, aa_to_id, params_architecture, model_type, conditional,
+									   optimization_mode, optimization_mode_params, device)
 
-		self.poe = True
 		seq_model_hyperparams['max_tcr_length'] = adatas[0].obsm['alpha_seq'].shape[1]
-		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(adatas[0].layers[self.gene_layers[0]].shape[1])
+		xdim = adatas[0].X.shape[1] if self.gene_layers[0] is None else len(
+			adatas[0].layers[self.gene_layers[0]].shape[1])
 		num_seq_labels = len(aa_to_id)
 
 		if self.conditional is not None:
@@ -202,14 +199,16 @@ class PoEModel(VAEBaseModel):
 								   seq_model_arch, seq_model_hyperparams, scRNA_model_arch, scRNA_model_hyperparams,
 								   num_conditional_labels, cond_dim)
 
-	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion, size_factor):
+	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion,
+					   size_factor):
 		''' Evaluate same-modality and joint reconstruction '''
 		scRNA_loss = 0.5 * loss_weights[0] * \
 					 (self.calc_scRNA_rec_loss(scRNA_pred[0], scRNA, scRNA_criterion, size_factor, self.losses[0]) +
 					  self.calc_scRNA_rec_loss(scRNA_pred[1], scRNA, scRNA_criterion, size_factor, self.losses[0]))
-		if tcr_seq_pred[0].shape[1] == tcr_seq.shape[1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
+		if tcr_seq_pred[0].shape[1] == tcr_seq.shape[
+			1] - 2:  # For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
 			mask = torch.ones_like(tcr_seq).bool()
-			mask[:, [0, mask.shape[1]//2]] = False
+			mask[:, [0, mask.shape[1] // 2]] = False
 			TCR_loss = 0.5 * loss_weights[1] * \
 					   (TCR_criterion(tcr_seq_pred[0].flatten(end_dim=1), tcr_seq[mask].flatten()) +
 						TCR_criterion(tcr_seq_pred[1].flatten(end_dim=1), tcr_seq[mask].flatten()))
@@ -222,7 +221,29 @@ class PoEModel(VAEBaseModel):
 
 		return loss, scRNA_loss, TCR_loss
 
-	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None, label_key=None):
+	def calculate_kld_loss(self, loss_weights, kl_criterion, mu, logvar, epoch):
+		"""
+		Calculate the kld loss for rna, tcr, and joint latent space (optional between rna and joint)
+		:param loss_weights:
+		:param kl_criterion:
+		:param mu:
+		:param logvar:
+		:param epoch:
+		:return:
+		"""
+		kld_loss = (kl_criterion(mu[0], logvar[0]) + kl_criterion(mu[1], logvar[1]) + kl_criterion(mu[2], logvar[2]))
+		kld_loss *= 1.0 / 3.0 * loss_weights[2] * self.kl_annealing(epoch, self.kl_annealing_epochs)
+
+		# possible constrain on joint space to resemble more the TCR space
+		if len(loss_weights) == 4:
+			kld_rna_joint = kl_criterion(mu[0], logvar[0], mu[2], logvar[2])
+			kld_rna_joint = loss_weights[3] * kld_rna_joint
+			kld_loss += kld_rna_joint
+		z = mu[2]  # use joint latent variable for further downstream tasks
+		return kld_loss, z
+
+	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None,
+						label_key=None):
 		"""
 		Create torch Dataset, see above for the input
 		:param adatas: list of adatas
@@ -312,7 +333,8 @@ class PoEModel(VAEBaseModel):
 		train_dataset = TCRDataset(scRNA_datas_train, seq_datas_train, seq_len_train, adatas_train, dataset_names_train,
 								   index_train, metadata_train, labels=None, conditional=conditional_train)
 		if val_split != 0:
-			val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val, index_val,
+			val_dataset = TCRDataset(scRNA_datas_val, seq_datas_val, seq_len_val, adatas_val, dataset_names_val,
+									 index_val,
 									 metadata_val, labels=None, conditional=conditional_val)
 		else:
 			val_dataset = None

@@ -8,9 +8,7 @@ class TrigonometricPositionalEncoding(nn.Module):
     """
         This trigonometric positional embedding was taken from:
         Title: Sequence-to-Sequence Modeling with nn.Transformer and TorchText
-        Authors: todo
         Date: 17th March 2021
-        Code version: ???
         Availability: https://pytorch.org/tutorials/beginner/transformer_tutorial.html
     """
     def __init__(self, embedding_dim, dropout, max_len):
@@ -59,8 +57,6 @@ class TransformerEncoder(nn.Module):
         x = x.transpose(0, 1)
         x = x + self.positional_encoding(x)
         x = self.transformer_encoder(x)
-        # todo add source mask, maybe ==> dont think its a good idea, since dim change for hidden layer
-        # todo: embedding shared over encoder decoder?
         x = x.transpose(0, 1)
         x = x.flatten(1)
         x = self.fc_reduction(x)
@@ -122,25 +118,3 @@ class TransformerDecoder(nn.Module):
         x = self.fc_out(x)
         x = x.transpose(0, 1)
         return x
-
-
-if __name__ == '__main__':
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    x_in = torch.tensor([[1, 5, 6, 4, 3, 9, 5, 2, 0], [1, 8, 7, 3, 4, 5, 6, 7, 2]]).to(device)
-    y_out = torch.tensor([[1, 7, 4, 3, 5, 9, 2, 0], [1, 5, 6, 2, 4, 7, 6, 2]]).to(device)
-
-    params_test = {
-        'dropout': 0.0,
-        'encoding_layers': 1,
-        'decoding_layers': 1,
-        'forward_expansion': 4,
-        'num_heads': 4,
-        'embedding_size': 24,
-        'num_tokens': 21,
-        'device': device
-    }
-    encoder = TransformerEncoder(params=params_test, hdim=256, num_seq_labels=9).to(device)
-    decoder = TransformerDecoder(params=params_test, hdim=256, num_seq_labels=9).to(device)
-    hidden = encoder(x_in, 0)
-    out = decoder(hidden, x_in)
-    print(out.shape)

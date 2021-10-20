@@ -161,6 +161,12 @@ class MoEModel(VAEBaseModel):
 
 		return loss, scRNA_loss, TCR_loss
 
+	def calculate_kld_loss(self, loss_weights, kl_criterion, mu, logvar, epoch):
+		kld_loss = (kl_criterion(mu[0], logvar[0]) + kl_criterion(mu[1], logvar[1]))
+		kld_loss *= 0.5 * loss_weights[2] * self.kl_annealing(epoch, self.kl_annealing_epochs)
+		z = 0.5 * (mu[0] + mu[1])
+		return kld_loss, z
+
 	def create_datasets(self, adatas, names, layers, seq_keys, val_split, metadata=[], train_masks=None, label_key=None):
 		"""
 		Create torch Dataset, see above for the input

@@ -1,6 +1,9 @@
-# https://github.com/theislab/multigrate
+"""
+This code was partially adapted from:
+Date: 15th March 2021
+Availability: https://github.com/theislab/multigrate
+"""
 import torch
-from functools import reduce
 
 
 class KLD(torch.nn.Module):
@@ -9,6 +12,14 @@ class KLD(torch.nn.Module):
         self.reduction = reduction
 
     def forward(self, mu, logvar, mu_2=None, logvar_2=None):
+        """
+        Calculate the Kullbach-Leibler-Divergence between two Gaussians
+        :param mu: mean of the first Gaussian
+        :param logvar: log(var) of the first Gaussian
+        :param mu_2: mean of the second Gaussian (default: 0)
+        :param logvar_2: log(var) of the second Gaussian (default: 1)
+        :return: loss value
+        """
         if mu_2 is None or logvar_2 is None:
             kl = self.univariate_kl_loss(mu, logvar)
         else:

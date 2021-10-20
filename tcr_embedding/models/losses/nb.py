@@ -38,3 +38,14 @@ class NB(torch.nn.Module):
             raise NotImplementedError(f'reduction method {self.reduction} is not implemented.')
 
         return res
+
+"""
+Code Snippet from vae base
+prediction = F.softmax(prediction, dim=-1)
+size_factor_view = size_factor.unsqueeze(1).expand(-1, prediction.shape[1]).to(prediction.device)
+dec_mean = prediction * size_factor_view
+dispersion = self.model.theta.T
+dispersion = torch.exp(dispersion)
+loss = - scRNA_criterion(prediction, dec_mean,
+                                          dispersion) * 1000  # TODO A Test, maybe delete afterwards
+"""
