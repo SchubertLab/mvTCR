@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import os
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
 import scanpy as sc
@@ -19,13 +20,10 @@ from .optimization.knn_prediction import report_knn_prediction
 from .optimization.modulation_prediction import report_modulation_prediction
 from .optimization.pseudo_metric import report_pseudo_metric
 
-from tcr_embedding.models.mixture_modules.base_model import BaseModel
 
-
-class VAEBaseModel(BaseModel, ABC):
+class VAEBaseModel(ABC):
 	def __init__(self,
 				 adata,
-				 aa_to_id,
 				 params_architecture,
 				 model_type='poe',
 				 conditional=None,
@@ -34,7 +32,6 @@ class VAEBaseModel(BaseModel, ABC):
 		"""
 		VAE Base Model, used for both single and joint models
 		:param adata: list of adatas containing train and val set
-		:param aa_to_id: dict containing mapping from amino acid symbol to label idx
 		:param conditional: str or None, if None a normal VAE is used, if str then the str determines the adata.obsm[conditional] as conditioning variable
 		:param optimization_mode_params: dict carrying the mode specific parameters
 		"""
@@ -53,7 +50,7 @@ class VAEBaseModel(BaseModel, ABC):
 			raise ValueError('Please specify either tcr, rna, or both hyperparameters.')
 
 		self.model_type = model_type.lower()
-		self.aa_to_id = aa_to_id
+		self.aa_to_id = adata.uns['aa_to_id']
 
 		self.conditional = conditional
 		self.optimization_mode_params = optimization_mode_params
@@ -65,7 +62,6 @@ class VAEBaseModel(BaseModel, ABC):
 		self._train_history = defaultdict(list)
 		self._val_history = defaultdict(list)
 
-		# self.max_seq_length = self.get_max_tcr_length()
 		# counters
 		self.best_optimization_metric = None
 		self.best_loss = None
@@ -85,6 +81,7 @@ class VAEBaseModel(BaseModel, ABC):
 		self.kl_annealing_epochs = None
 
 		# datasets
+		self.max_seq_length = self.get_max_tcr_length()
 		self.data_train, self.data_val = create_dataloader(self.adata)
 
 	def train(self,
@@ -308,3 +305,39 @@ class VAEBaseModel(BaseModel, ABC):
 		:return:
 		"""
 		return min(1.0, epoch / self.kl_annealing_epochs)
+
+	# <- logging helpers ->
+	@property
+	def history(self):
+		return pd.DataFrame(self._val_history)
+
+	@property
+	def train_history(self):
+		return pd.DataFrame(self._train_history)
+
+	def save(self, filepath):
+		""" Save model and optimizer state, and auxiliary data for continuing training """
+		model_file = {'state_dict': self.model.state_dict(),
+					  'train_history': self._train_history,
+					  'val_history': self._val_history,
+					  'aa_to_id': self.aa_to_id}
+		torch.save(model_file, filepath)
+
+	def load(self, filepath):
+		""" Load model for evaluation / inference"""
+		model_file = torch.load(os.path.join(filepath))
+		self.model.load_state_dict(model_file['state_dict'], strict=False)
+		self._train_history = model_file['train_history']
+		self._val_history = model_file['val_history']
+		self.aa_to_id = model_file['aa_to_id']
+
+	def get_max_tcr_length(self):
+		"""
+		Determine the maximum amount of letters in the TCR sequence (TRA+TRB+codons)
+		:return: int value maximal sequence length
+		"""
+		max_length = -99
+		tcr_data = self.adata.obs['TRA+TRB']
+		current_max = tcr_data.str.len().max()
+		max_length = max(current_max, max_length)
+		return max_length
