@@ -4,26 +4,22 @@ warnings.filterwarnings('ignore')  # "error", "ignore", "always", "default", "mo
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, WeightedRandomSampler
 import os
 import numpy as np
 from tqdm import tqdm
 from collections import defaultdict
-import pandas as pd
 import scanpy as sc
-from sklearn.metrics import classification_report
 from abc import ABC, abstractmethod
 
-from tcr_embedding.datasets.scdataset import TCRDataset
-from .losses.nb import NB
 from .losses.kld import KLD
 
+from tcr_embedding.datasets.dataset_generator import create_dataloader, create_dataloader_latent
+
+from .optimization.knn_prediction import report_knn_prediction
+from .optimization.modulation_prediction import report_modulation_prediction
+from .optimization.pseudo_metric import report_pseudo_metric
+
 from tcr_embedding.models.mixture_modules.base_model import BaseModel
-from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
-from tcr_embedding.evaluation.Imputation import run_imputation_evaluation
-from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
-from tcr_embedding.models.scGen import run_scgen_cross_validation
 
 
 class VAEBaseModel(BaseModel, ABC):
@@ -33,19 +29,15 @@ class VAEBaseModel(BaseModel, ABC):
 				 params_architecture,
 				 model_type='poe',
 				 conditional=None,
-				 optimization_mode='Reconstruction',
 				 optimization_mode_params=None,
-				 device=None,
-				 ):
+				 device=None):
 		"""
 		VAE Base Model, used for both single and joint models
 		:param adata: list of adatas containing train and val set
 		:param aa_to_id: dict containing mapping from amino acid symbol to label idx
 		:param conditional: str or None, if None a normal VAE is used, if str then the str determines the adata.obsm[conditional] as conditioning variable
-		:param optimization_mode: str, 'Reconstruction', 'Prediction', 'scGen', 'RNA_KLD', 'RNA_MMD', 'RNA_MEAN'
 		:param optimization_mode_params: dict carrying the mode specific parameters
 		"""
-
 		self.adata = adata
 
 		self.params_tcr = None
@@ -64,7 +56,6 @@ class VAEBaseModel(BaseModel, ABC):
 		self.aa_to_id = aa_to_id
 
 		self.conditional = conditional
-		self.optimization_mode = optimization_mode
 		self.optimization_mode_params = optimization_mode_params
 
 		self.device = device
@@ -75,10 +66,11 @@ class VAEBaseModel(BaseModel, ABC):
 		self._val_history = defaultdict(list)
 
 		# self.max_seq_length = self.get_max_tcr_length()
-		self.kl_annealing_epochs = None
+		# counters
 		self.best_optimization_metric = None
 		self.best_loss = None
 		self.no_improvements = 0
+		self.kl_annealing_epochs = None
 
 		# loss functions
 		self.loss_function_rna = nn.MSELoss()
@@ -86,28 +78,33 @@ class VAEBaseModel(BaseModel, ABC):
 		self.loss_function_kld = KLD()
 		self.loss_function_class = nn.CrossEntropyLoss()
 
+		# training params
+		self.batch_size = 512
+		self.loss_weights = None
+		self.comet = None
+		self.kl_annealing_epochs = None
+
+		# datasets
+		self.data_train, self.data_val = create_dataloader(self.adata)
 
 	def train(self,
 			  n_epochs=100,
 			  batch_size=64,
-			  lr=3e-4,
+			  learning_rate=3e-4,
 			  loss_weights=None,
 			  kl_annealing_epochs=None,
-			  val_split='set',
 			  metadata=None,
 			  early_stop=None,
 			  balanced_sampling=None,
 			  save_path='../saved_models/',
-			  comet=None,
-			  ):
+			  comet=None):
 		"""
 		Train the model for n_epochs
 		:param n_epochs: None or int, number of epochs to train, if None n_iters needs to be int
 		:param batch_size: int, batch_size
-		:param lr: float, learning rate
+		:param learning_rate: float, learning rate
 		:param loss_weights: list of floats, loss_weights[0]:=weight or scRNA loss, loss_weights[1]:=weight for TCR loss, loss_weights[2] := KLD Loss
 		:param kl_annealing_epochs: int or None, int number of epochs until kl reaches maximum warmup, if None this value is set to 30% of n_epochs
-		:param val_split: str or float, if str it indicates the adata.obs[val_split] containing 'train' and 'val', if float, adata is split randomly by val_split
 		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
 		:param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
 		:param balanced_sampling: None or str, indicate adata.obs column to balance
@@ -115,8 +112,11 @@ class VAEBaseModel(BaseModel, ABC):
 		:param comet: None or comet_ml.Experiment object
 		:return:
 		"""
-		if self.device is None:
-			self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+		self.batch_size = batch_size
+		self.loss_weights = loss_weights
+		self.comet = comet
+		self.kl_annealing_epochs = kl_annealing_epochs
+		assert 3 <= len(loss_weights) <= 4, 'Length of loss weights need to be either 3 or 4.'
 
 		if metadata is None:
 			metadata = []
@@ -130,55 +130,53 @@ class VAEBaseModel(BaseModel, ABC):
 			pass
 
 		if kl_annealing_epochs is None:
-			kl_annealing_epochs = int(0.3 * n_epochs)
-
+			self.kl_annealing_epochs = int(0.3 * n_epochs)
 
 		# raise ValueError(f'length of loss_weights must be 3, 4 (supervised) or None.')
 
 		self.model = self.model.to(self.device)
-		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-
+		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learning_rate)
 
 		for epoch in tqdm(n_epochs):
 			self.model.train()
 			train_loss_summary = self.run_epoch(epoch, phase='train')
-			self.log_losses(train_loss_summary)
-			self.run_backward_pass(total_loss_train)
+			self.log_losses(train_loss_summary, epoch)
+			self.run_backward_pass(train_loss_summary['train Loss'])
 
 			self.model.eval()
 			with torch.no_grad():
-				val_loss_summary = self.run_epoch(phase='val')
-			self.log_losses(val_loss_summary)
-			if self.do_early_stopping(total_loss_val):
-				break
+				val_loss_summary = self.run_epoch(epoch, phase='val')
+				self.log_losses(val_loss_summary, epoch)
+				self.additional_evaluation()
 
+			if self.do_early_stopping(val_loss_summary['val Loss'], early_stop, save_path, epoch):
+				break
 
 	def run_epoch(self, epoch, phase='train'):
 		if phase == 'train':
-			data = train_dataloader
+			data = self.data_train
 		else:
-			data = val_dataloader
+			data = self.data_val
 
 		loss_total = []
 		rna_loss_total = []
 		tcr_loss_total = []
 		kld_loss_total = []
 
-		for scRNA, tcr_seq, size_factor, index, seq_len, metadata_batch, labels, conditional in data:
-			scRNA = scRNA.to(self.device)
-			tcr_seq = tcr_seq.to(self.device)
+		for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
+			rna = rna.to(self.device)
+			tcr = tcr.to(self.device)
 
 			if self.conditional is not None:
 				conditional = conditional.to(self.device)
 			else:
 				conditional = None
 
-			z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
-			kld_loss, z = self.calculate_kld_loss(loss_weights, mu, logvar, epoch)
-			loss, rna_loss, tcr_loss = self.calculate_loss(scRNA_pred, scRNA, tcr_seq_pred, tcr_seq,
-															 loss_weights, size_factor)
+			z, mu, logvar, rna_pred, tcr_pred = self.model(rna, tcr, seq_len, conditional)
+			kld_loss, z = self.calculate_kld_loss(mu, logvar, epoch)
+			rna_loss, tcr_loss = self.calculate_loss(rna_pred, rna, tcr_pred, tcr)
 
-			loss = loss + kld_loss # todo rna_loss + tcr_loss
+			loss = kld_loss + rna_loss + tcr_loss
 
 			loss_total.append(loss)
 			rna_loss_total.append(rna_loss)
@@ -191,19 +189,18 @@ class VAEBaseModel(BaseModel, ABC):
 		kld_loss_total = torch.stack(kld_loss_total).mean().item()
 
 		if torch.isnan(loss_total):
-			print(f'Loss became NaN, Loss: {loss}')
+			print(f'ERROR: NaN in loss.')
 			return
 
 		summary_losses = {f'{phase} Loss': loss_total,
-						  f'{phase} scRNA Loss': rna_loss_total,
+						  f'{phase} RNA Loss': rna_loss_total,
 						  f'{phase} TCR Loss': tcr_loss_total,
 						  f'{phase} KLD Loss': kld_loss_total}
 		return summary_losses
 
 	def log_losses(self, summary_losses, epoch):
-		if comet is not None:
-			comet.log_metrics(summary_losses,
-							  epoch=epoch)
+		if self.comet is not None:
+			self.comet.log_metrics(summary_losses, epoch=epoch)
 
 	def run_backward_pass(self, loss):
 		self.optimizer.zero_grad()
@@ -213,172 +210,67 @@ class VAEBaseModel(BaseModel, ABC):
 		self.optimizer.step()
 
 	def additional_evaluation(self):
-		if self.optimization_mode == 'Prediction':
-			self.report_validation_prediction(batch_size, epoch, comet, save_path)
-		if self.optimization_mode == 'Reconstruction':
-			self.report_reconstruction(loss_val_total)
-		if self.optimization_mode == 'PseudoMetric':
-			self.report_pseudo_metric(batch_size, epoch, comet, save_path)
-		if self.optimization_mode == 'scGen':
-			self.report_scgen(batch_size, epoch, comet, save_path)
+		if self.optimization_mode_params is None:
+			return
+		name = self.optimization_mode_params['name']
+		if name == 'knn_prediction':
+			report_knn_prediction()
+		elif name == 'modulation_prediction':
+			report_modulation_prediction()
+		elif name == 'pseudo_metric':
+			report_pseudo_metric()
 
-	def do_early_stopping(self):
-		if (loss_val_total < self.best_loss):
-			self.best_loss = loss_val_total
+	def do_early_stopping(self, val_loss, early_stop, save_path, epoch):
+		if val_loss < self.best_loss:
+			self.best_loss = val_loss
 			self.save(os.path.join(save_path, 'best_reconstruction_model.pt'))
-			no_improvements = 0
+			self.no_improvements = 0
 		else:
-			no_improvements += 1
-		if early_stop is not None and no_improvements > early_stop:
+			self.no_improvements += 1
+		if early_stop is not None and self.no_improvements > early_stop:
 			print('Early stopped')
-			break
-		# logging
-		'Epochs without Improvements': no_improvements},
-		epoch = epoch
+			return True
+		self.comet.log_metric('Epochs without Improvements', self.no_improvements, epoch)
+		return False
 
-
-	def report_validation_prediction(self, batch_size, epoch, comet, save_path):
-		"""
-		Report the objective metric of the 10x dataset for hyper parameter optimization.
-		:param batch_size: Batch size for creating the validation latent space
-		:param epoch: epoch number for logging
-		:param comet: Comet experiments for logging validation
-		:param save_path: Path for saving trained models
-		:return: Reports externally to comet, saves model.
-		"""
-		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size)
-		try:
-			summary = run_imputation_evaluation(self.adata, test_embedding_func, query_source='val',
-												use_non_binder=True, use_reduced_binders=True,
-												label_pred=self.optimization_mode_params['prediction_column'])
-		except:
-			print(f'kNN did not work')
-			return
-
-		metrics = summary['knn']
-
-		if comet is not None:
-			for antigen, metric in metrics.items():
-				if antigen != 'accuracy':
-					comet.log_metrics(metric, prefix=antigen, epoch=epoch)
-				else:
-					comet.log_metric('accuracy', metric, epoch=epoch)
-
-		if metrics['weighted avg']['f1-score'] > self.best_optimization_metric:
-			self.best_optimization_metric = metrics['weighted avg']['f1-score']
-			self.save(os.path.join(save_path, f'best_knn_model.pt'))
-
-	def report_reconstruction(self, validation_loss):
-		"""
-		Report the reconstruction loss as metric for hyper parameter optimization.
-		:param validation_loss: Reconstruction loss on the validation set
-		:return: Reports to files
-		"""
-		# todo
-		pass
-
-	def report_pseudo_metric(self, batch_size, epoch, comet, save_path):
-		"""
-		Calculate a pseudo metric based on kNN of multiple meta information
-		:param batch_size:
-		:param epoch:
-		:param comet:
-		:param save_path:
-		:return:
-		"""
-		test_embedding_func = get_model_prediction_function(self, batch_size=batch_size, do_adata=True,
-														metadata=self.optimization_mode_params['prediction_labels'])
-		try:
-			summary = run_knn_within_set_evaluation(self.adata, test_embedding_func,
-													self.optimization_mode_params['prediction_labels'], subset='val')
-			summary['pseudo_metric'] = sum(summary.values())
-		except Exception as e:
-			print(e)
-			print('Error in kNN')
-			return
-
-		if comet is not None:
-			comet.log_metrics(summary, epoch=epoch)
-		if self.best_optimization_metric is None or summary['pseudo_metric'] > self.best_optimization_metric:
-			self.best_optimization_metric = summary['pseudo_metric']
-			self.save(os.path.join(save_path, f'best_model_by_metric.pt'))
-			comet.log_metric('max_pseudo_metric',  self.best_optimization_metric,
-							 step=, epoch=epoch)
-
-	def report_scgen(self, batch_size, epoch, comet, save_path):
-		summary = run_scgen_cross_validation(self.adata, self.optimization_mode_params['column_fold'],
-											 self, self.optimization_mode_params['column_perturbation'],
-											 self.optimization_mode_params['indicator_perturbation'],
-											 self.optimization_mode_params['column_cluster'])
-		score = summary['avg_r_squared']
-
-		if comet is not None:
-			for key, value in summary.items():
-
-				if key == 'avg_r_squared':
-					comet.log_metric(key, value, step=int(epoch), epoch=epoch)
-				else:
-					comet.log_metrics(value, prefix=key, step=int(epoch), epoch=epoch)
-		if self.best_optimization_metric is None or score > self.best_optimization_metric:
-			self.best_optimization_metric = score
-			self.save(os.path.join(save_path, 'best_model_by_scGen.pt'))
-			if comet is not None:
-				comet.log_metric('max_scGen_avg_R_squared',  self.best_optimization_metric,
-								 step=int(epoch), epoch=epoch)
-
-	def get_latent(self, adata, batch_size=256, num_workers=0, metadata=[], return_mean=True):
+	# <- prediction functions ->
+	def get_latent(self, adata, metadata=None, return_mean=True):
 		"""
 		Get latent
 		:param adata:
-		:param batch_size: int, batch size
-		:param num_workers: int, num_workers for dataloader
 		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
-		pred_datasets, _, _ = self.create_datasets(adata, val_split=0, metadata=metadata)
-		pred_dataloader = DataLoader(pred_datasets, batch_size=batch_size, shuffle=False, collate_fn=None,
-									 num_workers=num_workers)
+		data_embed = create_dataloader(adata)
 
 		zs = []
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
 			self.model.eval()
-			for scRNA, tcr_seq, size_factor, name, index, seq_len, metadata_batch, labels, conditional in pred_dataloader:
-				scRNA = scRNA.to(self.device)
-				tcr_seq = tcr_seq.to(device)
+			for rna, tcr, size_factor, seq_len, metadata_batch, conditional in data_embed:
+				rna = rna.to(self.device)
+				tcr = tcr.to(self.device)
 				if self.conditional is not None:
 					conditional = conditional.to(self.device)
 				else:
 					conditional = None
-				z, mu, logvar, scRNA_pred, tcr_seq_pred = self.model(scRNA, tcr_seq, seq_len, conditional)
+				z, mu, _, _, _ = self.model(rna, tcr, seq_len, conditional)
 				if return_mean:
 					z = mu
-
-				if self.moe:
-					z = 0.5 * (mu[0] + mu[1])  # mean of latent space from both modalities for mmvae
-				elif self.poe:
-					z = z[2]  # use joint latent variable
+				z = self.model.get_latent_from_z(z)
 				z = sc.AnnData(z.detach().cpu().numpy())
-				z.obs['barcode'] = index
-				z.obs['dataset'] = name
 				z.obs[metadata] = np.array(metadata_batch).T
 				zs.append(z)
-
 		return sc.AnnData.concatenate(*zs)
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):
-		if self.conditional is None:
-			dataset = torch.utils.data.TensorDataset(torch.from_numpy(adata_latent.X))
-		else:
-			dataset = torch.utils.data.TensorDataset(torch.from_numpy(adata_latent.X),
-													 torch.from_numpy(adata_latent.obsm[self.conditional]))
-		dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024)
+		data = create_dataloader_latent(adata_latent)
 		rnas = []
 		with torch.no_grad():
 			model = self.model.to(self.device)
 			model.eval()
-			for batch in dataloader:
+			for batch in data:
 				if self.conditional is not None:
 					batch = batch[0].to(self.device)
 					conditional = batch[1].to(self.device)
@@ -393,58 +285,26 @@ class VAEBaseModel(BaseModel, ABC):
 			rnas.obs[metadata] = adata_latent.obs[metadata]
 		return rnas
 
-	def calculate_sampling_weights(self, adata, train_mask, class_column):
-		"""
-		Calculate sampling weights for more balanced sampling in case of imbalanced classes,
-		:params class_column: str, key for class to be balanced
-		:params log_divisor: divide the label counts by this factor before taking the log, higher number makes the sampling more uniformly balanced
-		:return: list of weights
-		"""
-		label_counts = []
-
-		label_count = adata[train_mask].obs[class_column].map(adata[train_mask].obs[class_column].value_counts())
-		label_counts.append(label_count)
-
-		label_counts = pd.concat(label_counts, ignore_index=True)
-		label_counts = np.log(label_counts / 10 + 1)
-		label_counts = 1 / label_counts
-
-		sampling_weights = label_counts / sum(label_counts)
-
-		return sampling_weights
-
+	# <- loss functions ->
 	@abstractmethod
-	def calculate_loss(self, scRNA_pred, scRNA, tcr_seq_pred, tcr_seq, loss_weights, scRNA_criterion, TCR_criterion,
-					   size_factor):
+	def calculate_loss(self, rna_pred, rna, tcr_pred, tcr):
 		raise NotImplementedError
 
-	def calculate_rna_loss(self, prediction, truth, loss_function):
-		loss = loss_function(prediction, truth)
-		return loss
-
-	def calculate_tcr_annealing(self, init_tcr_loss_weight, n_epochs, epoch):
-		if epoch > n_epochs / 2:
-			return init_tcr_loss_weight * (epoch - n_epochs / 2) / (n_epochs / 2)
-		else:
-			return 0.0
-
 	@abstractmethod
-	def calculate_kld_loss(self, loss_weights, mu, logvar, epoch):
+	def calculate_kld_loss(self, mu, logvar, epoch):
 		"""
 		Calculate the kld loss and z depending on the model type
-		:param loss_weights: list, containing the weightening of the different loss factors
 		:param mu: mean of the VAE latent space
 		:param logvar: log(variance) of the VAE latent space
 		:param epoch: current epoch as integer
-		:param kl_annealing_epochs: amount of kl annealing epochs
 		:return:
 		"""
 		raise NotImplementedError('Implement this in the different model versions')
 
-# todo move this to model
-"""
-else (no poe, no moe):
-kld_loss = loss_weights[2] * kl_criterion(mu, logvar) * self.kl_annealing(e, kl_annealing_epochs)
-z = mu  # make z deterministic by using the mean
-return kld_loss, z
-"""
+	def get_kl_annealing_factor(self, epoch):
+		"""
+		Calculate KLD annealing factor, i.e. KLD needs to get warmup
+		:param epoch: current epoch
+		:return:
+		"""
+		return min(1.0, epoch / self.kl_annealing_epochs)
