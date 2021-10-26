@@ -39,8 +39,7 @@ class PoEModelTorch(nn.Module):
         cond_input_dim = cond_dim if cond_input else 0
 
         self.tcr_vae_encoder = MLP(hdim + cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout,
-                                   batch_norm,
-                                   regularize_last_layer=False)
+                                   batch_norm, regularize_last_layer=False)
         self.tcr_vae_decoder = MLP(zdim + cond_dim, hdim, shared_hidden[::-1], activation, activation, dropout,
                                    batch_norm, regularize_last_layer=True)
 
@@ -124,10 +123,10 @@ class PoEModelTorch(nn.Module):
 
     def reparameterize(self, mu, log_var):
         """
-		https://debuggercafe.com/getting-started-with-variational-autoencoder-using-pytorch/
-		:param mu: mean from the encoder's latent space
-		:param log_var: log variance from the encoder's latent space
-		"""
+        https://debuggercafe.com/getting-started-with-variational-autoencoder-using-pytorch/
+        :param mu: mean from the encoder's latent space
+        :param log_var: log variance from the encoder's latent space
+        """
         std = torch.exp(0.5 * log_var)  # standard deviation
         eps = torch.randn_like(std)  # `randn_like` as we need the same size
         z = mu + (eps * std)  # sampling as if coming from the input space
@@ -147,11 +146,11 @@ class PoEModelTorch(nn.Module):
 
     def predict_transcriptome(self, z_shared, conditional=None):
         """
-		Predict the transcriptome connected to an shared latent space
-		:param z_shared: torch.tensor, shared latent representation
-		:param conditional:
-		:return: torch.tensor, transcriptome profile
-		"""
+        Predict the transcriptome connected to an shared latent space
+        :param z_shared: torch.tensor, shared latent representation
+        :param conditional:
+        :return: torch.tensor, transcriptome profile
+        """
         if conditional is not None:  # more efficient than doing two concatenations
             cond_emb_vec = self.cond_emb(conditional)
             z_shared = torch.cat([z_shared, cond_emb_vec], dim=-1)  # shape=[batch_size, zdim+cond_dim]
@@ -216,7 +215,7 @@ class PoEModel(VAEBaseModel):
             tcr_loss = (self.loss_function_tcr(tcr_pred[0].flatten(end_dim=1), tcr.flatten()) +
                         self.loss_function_tcr(tcr_pred[1].flatten(end_dim=1), tcr.flatten()))
             tcr_loss *= 0.5 * self.loss_weights[1]
-        return rna, tcr_loss
+        return rna_loss, tcr_loss
 
     def calculate_kld_loss(self, mu, logvar, epoch):
         """

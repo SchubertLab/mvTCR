@@ -14,7 +14,8 @@ from abc import ABC, abstractmethod
 
 from .losses.kld import KLD
 
-from tcr_embedding.datasets.dataset_generator import create_dataloader, create_dataloader_latent
+from tcr_embedding.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
+from tcr_embedding.dataloader.DataLoader import initialize_prediction_loader
 
 from .optimization.knn_prediction import report_knn_prediction
 from .optimization.modulation_prediction import report_modulation_prediction
@@ -26,6 +27,8 @@ class VAEBaseModel(ABC):
 				 adata,
 				 params_architecture,
 				 model_type='poe',
+				 balanced_sampling='clonotype',
+				 metadata=None,
 				 conditional=None,
 				 optimization_mode_params=None,
 				 device=None):
@@ -33,6 +36,8 @@ class VAEBaseModel(ABC):
 		VAE Base Model, used for both single and joint models
 		:param adata: list of adatas containing train and val set
 		:param conditional: str or None, if None a normal VAE is used, if str then the str determines the adata.obsm[conditional] as conditioning variable
+		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
+		:param balanced_sampling: None or str, indicate adata.obs column to balance
 		:param optimization_mode_params: dict carrying the mode specific parameters
 		"""
 		self.adata = adata
@@ -80,9 +85,18 @@ class VAEBaseModel(ABC):
 		self.comet = None
 		self.kl_annealing_epochs = None
 
+		# Model
+		self.model = None
+		self.optimizer = None
+
 		# datasets
 		self.max_seq_length = self.get_max_tcr_length()
-		self.data_train, self.data_val = create_dataloader(self.adata)
+		if metadata is None:
+			metadata = []
+		if balanced_sampling is not None and balanced_sampling not in metadata:
+			metadata.append(balanced_sampling)
+		self.data_train, self.data_val = initialize_data_loader(adata, metadata, conditional, None,
+																balanced_sampling, self.batch_size)
 
 	def train(self,
 			  n_epochs=100,
@@ -90,9 +104,7 @@ class VAEBaseModel(ABC):
 			  learning_rate=3e-4,
 			  loss_weights=None,
 			  kl_annealing_epochs=None,
-			  metadata=None,
 			  early_stop=None,
-			  balanced_sampling=None,
 			  save_path='../saved_models/',
 			  comet=None):
 		"""
@@ -102,9 +114,7 @@ class VAEBaseModel(ABC):
 		:param learning_rate: float, learning rate
 		:param loss_weights: list of floats, loss_weights[0]:=weight or scRNA loss, loss_weights[1]:=weight for TCR loss, loss_weights[2] := KLD Loss
 		:param kl_annealing_epochs: int or None, int number of epochs until kl reaches maximum warmup, if None this value is set to 30% of n_epochs
-		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
 		:param early_stop: int, stop training after this number of epochs if val loss is not improving anymore
-		:param balanced_sampling: None or str, indicate adata.obs column to balance
 		:param save_path: str, path to directory to save model
 		:param comet: None or comet_ml.Experiment object
 		:return:
@@ -115,15 +125,9 @@ class VAEBaseModel(ABC):
 		self.kl_annealing_epochs = kl_annealing_epochs
 		assert 3 <= len(loss_weights) <= 4, 'Length of loss weights need to be either 3 or 4.'
 
-		if metadata is None:
-			metadata = []
-
-		if balanced_sampling is not None and balanced_sampling not in metadata:
-			metadata.append(balanced_sampling)
-
 		try:
 			os.makedirs(save_path)  # Create directory to prevent Error while saving model weights
-		except:
+		except OSError:
 			pass
 
 		if kl_annealing_epochs is None:
@@ -144,7 +148,7 @@ class VAEBaseModel(ABC):
 			with torch.no_grad():
 				val_loss_summary = self.run_epoch(epoch, phase='val')
 				self.log_losses(val_loss_summary, epoch)
-				self.additional_evaluation()
+				self.additional_evaluation(epoch, save_path)
 
 			if self.do_early_stopping(val_loss_summary['val Loss'], early_stop, save_path, epoch):
 				break
@@ -206,21 +210,33 @@ class VAEBaseModel(ABC):
 			nn.utils.clip_grad_value_(self.model.parameters(), self.optimization_mode_params['grad_clip'])
 		self.optimizer.step()
 
-	def additional_evaluation(self):
+	def additional_evaluation(self, epoch, save_path):
 		if self.optimization_mode_params is None:
 			return
 		name = self.optimization_mode_params['name']
+		if name == 'reconstruction':
+			return
 		if name == 'knn_prediction':
-			report_knn_prediction()
+			score, relation = report_knn_prediction(self.adata, self, self.optimization_mode_params, self.batch_size,
+													epoch, self.comet)
 		elif name == 'modulation_prediction':
-			report_modulation_prediction()
+			score, relation = report_modulation_prediction(self.adata, self, self.optimization_mode_params,
+														   self.batch_size,	epoch, self.comet)
 		elif name == 'pseudo_metric':
-			report_pseudo_metric()
+			score, relation = report_pseudo_metric(self.adata, self, self.optimization_mode_params, self.batch_size,
+												   epoch, self.comet)
+		else:
+			raise ValueError('Unknown Optimization mode')
+		if relation(score, self.best_optimization_metric):
+			self.best_optimization_metric = score
+			self.save(os.path.join(save_path, f'best_model_by_metric.pt'))
+			if self.comet is not None:
+				self.comet.log_metric('max_metric', self.best_optimization_metric, epoch=epoch)
 
 	def do_early_stopping(self, val_loss, early_stop, save_path, epoch):
 		if val_loss < self.best_loss:
 			self.best_loss = val_loss
-			self.save(os.path.join(save_path, 'best_reconstruction_model.pt'))
+			self.save(os.path.join(save_path, 'best_model_by_reconstruction.pt'))
 			self.no_improvements = 0
 		else:
 			self.no_improvements += 1
@@ -231,7 +247,7 @@ class VAEBaseModel(ABC):
 		return False
 
 	# <- prediction functions ->
-	def get_latent(self, adata, metadata=None, return_mean=True):
+	def get_latent(self, adata, metadata, return_mean=True):
 		"""
 		Get latent
 		:param adata:
@@ -239,7 +255,7 @@ class VAEBaseModel(ABC):
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
-		data_embed = create_dataloader(adata)
+		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size)
 
 		zs = []
 		with torch.no_grad():
@@ -262,7 +278,7 @@ class VAEBaseModel(ABC):
 		return sc.AnnData.concatenate(*zs)
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):
-		data = create_dataloader_latent(adata_latent)
+		data = initialize_latent_loader(adata_latent, self.batch_size, self.conditional)
 		rnas = []
 		with torch.no_grad():
 			model = self.model.to(self.device)
