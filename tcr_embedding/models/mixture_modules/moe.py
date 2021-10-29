@@ -2,8 +2,6 @@
 import torch
 import torch.nn as nn
 
-from tcr_embedding.models.architectures.cnn import CNNEncoder, CNNDecoder
-from tcr_embedding.models.architectures.bigru import BiGRUEncoder, BiGRUDecoder
 from tcr_embedding.models.architectures.transformer import TransformerEncoder, TransformerDecoder
 from tcr_embedding.models.architectures.mlp import MLP
 from tcr_embedding.models.architectures.mlp_scRNA import build_mlp_encoder, build_mlp_decoder
@@ -154,14 +152,16 @@ class MoEModel(VAEBaseModel):
 	def __init__(self,
 				 adata,
 				 params_architecture,
-				 model_type='poe',
+				 balanced_sampling='clonotype',
+				 metadata=None,
 				 conditional=None,
 				 optimization_mode_params=None,
 				 label_key=None,
 				 device=None
 				 ):
-		super(MoEModel, self).__init__(adata, params_architecture, model_type, conditional,
-									   optimization_mode_params, label_key, device)
+		super(MoEModel, self).__init__(adata, params_architecture, balanced_sampling, metadata,
+									   conditional, optimization_mode_params, label_key, device)
+		self.model_type = 'moe'
 
 		self.params_tcr['max_tcr_length'] = adata.obsm['alpha_seq'].shape[1]
 		self.params_tcr['num_seq_labels'] = len(self.aa_to_id)

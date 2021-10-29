@@ -26,7 +26,6 @@ class VAEBaseModel(ABC):
 	def __init__(self,
 				 adata,
 				 params_architecture,
-				 model_type='poe',
 				 balanced_sampling='clonotype',
 				 metadata=None,
 				 conditional=None,
@@ -42,6 +41,13 @@ class VAEBaseModel(ABC):
 		:param optimization_mode_params: dict carrying the mode specific parameters
 		"""
 		self.adata = adata
+		self.params_architecture = params_architecture
+		self.balanced_sampling = balanced_sampling
+		self.metadata = metadata
+		self.conditional = conditional
+		self.optimization_mode_params = optimization_mode_params
+		self.label_key = label_key
+		self.device = device
 
 		self.params_tcr = None
 		self.params_rna = None
@@ -58,14 +64,8 @@ class VAEBaseModel(ABC):
 		if self.params_tcr is None and self.params_rna is None:
 			raise ValueError('Please specify either tcr, rna, or both hyperparameters.')
 
-		self.model_type = model_type.lower()
 		self.aa_to_id = adata.uns['aa_to_id']
 
-		self.conditional = conditional
-		self.optimization_mode_params = optimization_mode_params
-		self.label_key = label_key
-
-		self.device = device
 		if self.device is None:
 			self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -91,6 +91,7 @@ class VAEBaseModel(ABC):
 		self.kl_annealing_epochs = None
 
 		# Model
+		self.model_type = None
 		self.model = None
 		self.optimizer = None
 		self.supervised_model = None
@@ -245,7 +246,7 @@ class VAEBaseModel(ABC):
 													epoch, self.comet)
 		elif name == 'modulation_prediction':
 			score, relation = report_modulation_prediction(self.adata, self, self.optimization_mode_params,
-														   self.batch_size,	epoch, self.comet)
+														   self.batch_size, epoch, self.comet)
 		elif name == 'pseudo_metric':
 			score, relation = report_pseudo_metric(self.adata, self, self.optimization_mode_params, self.batch_size,
 												   epoch, self.comet)
@@ -324,7 +325,7 @@ class VAEBaseModel(ABC):
 
 	def predict_label(self, adata):
 		data, _ = initialize_data_loader(adata, None, self.conditional, self.label_key,
-													None, self.batch_size)
+										 None, self.batch_size)
 		prediction_total = []
 		with torch.no_grad():
 			for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
@@ -391,7 +392,16 @@ class VAEBaseModel(ABC):
 		model_file = {'state_dict': self.model.state_dict(),
 					  'train_history': self._train_history,
 					  'val_history': self._val_history,
-					  'aa_to_id': self.aa_to_id}
+					  'aa_to_id': self.aa_to_id,
+
+					  'params_architecture': self.params_architecture,
+					  'balanced_sampling': self.balanced_sampling,
+					  'metadata': self.metadata,
+					  'conditional': self.conditional,
+					  'optimization_mode_params': self.optimization_mode_params,
+					  'label_key': self.label_key,
+					  'model_type': self.model_type,
+					  }
 		torch.save(model_file, filepath)
 
 	def load(self, filepath):

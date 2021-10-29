@@ -106,15 +106,18 @@ class RnaModel(VAEBaseModel):
 	def __init__(self,
 				 adata,
 				 params_architecture,
-				 model_type='poe',
+				 balanced_sampling='clonotype',
+				 metadata=None,
 				 conditional=None,
 				 optimization_mode_params=None,
 				 label_key=None,
 				 device=None
 				 ):
 
-		super(RnaModel, self).__init__(adata, params_architecture, model_type, conditional,
-									   optimization_mode_params, label_key, device)
+		super(RnaModel, self).__init__(adata, params_architecture, balanced_sampling, metadata,
+									   conditional, optimization_mode_params, label_key, device)
+		self.model_type = 'rna'
+
 		self.params_rna['xdim'] = adata[0].X.shape[1]
 
 		num_conditional_labels = 0

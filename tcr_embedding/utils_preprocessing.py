@@ -109,5 +109,3 @@ def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, rando
 	test = df[df[group_col].isin(all_test)]
 
 	return train, test
-
-

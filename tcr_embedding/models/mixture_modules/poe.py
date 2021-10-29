@@ -166,14 +166,17 @@ class PoEModel(VAEBaseModel):
     def __init__(self,
                  adata,
                  params_architecture,
-                 model_type='poe',
+                 balanced_sampling='clonotype',
+                 metadata=None,
                  conditional=None,
                  optimization_mode_params=None,
                  label_key=None,
                  device=None
                  ):
-        super(PoEModel, self).__init__(adata, params_architecture, model_type, conditional,
-                                       optimization_mode_params, label_key, device)
+        super(PoEModel, self).__init__(adata, params_architecture, balanced_sampling, metadata,
+                                       conditional, optimization_mode_params, label_key, device)
+
+        self.model_type = 'poe'
 
         self.params_tcr['max_tcr_length'] = adata.obsm['alpha_seq'].shape[1]
         self.params_tcr['num_seq_labels'] = len(self.aa_to_id)
