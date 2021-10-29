@@ -1,8 +1,6 @@
 import numpy as np
 from tqdm import tqdm
 from sklearn.model_selection import GroupShuffleSplit
-import scanpy as sc
-from manuscript.constants import HIGH_COUNT_ANTIGENS, ANTIGEN_COLORS
 
 
 def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
@@ -113,41 +111,3 @@ def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, rando
 	return train, test
 
 
-def plot_umap(adata, title):
-	adata.obs['binding_name'] = adata.obs['binding_name'].astype(str)
-	sc.pp.neighbors(adata, use_rep='X')
-	sc.tl.umap(adata)
-	fig_donor = sc.pl.umap(adata, color='donor', title=title, return_fig=True)
-	fig_donor.tight_layout()
-	fig_clonotype = sc.pl.umap(adata, color='clonotype', title=title, return_fig=True)
-	fig_clonotype.tight_layout()
-	fig_antigen = sc.pl.umap(adata, color='binding_name', groups=HIGH_COUNT_ANTIGENS + ['no_data'], palette=ANTIGEN_COLORS, title=title, return_fig=True)
-	fig_antigen.tight_layout()
-	fig_antigen.set_size_inches(12, 4.8)
-
-	return fig_donor, fig_clonotype, fig_antigen
-
-
-def plot_umap_list(adata, title, color_groups):
-	"""
-	Plots UMAPS based with different coloring groups
-	:param adata: Adata Object containing a latent space embedding
-	:param title: Figure title
-	:param color_groups: Column name in adata.obs used for coloring the UMAP
-	:return:
-	"""
-	try:
-		if adata.X.shape[1] == 2:
-			adata.obsm['X_umap'] = adata.X
-		else:
-			sc.pp.neighbors(adata, use_rep='X')
-			sc.tl.umap(adata)
-		figures = []
-		for group in color_groups:
-			fig = sc.pl.umap(adata, color=group, title=title+'_'+group, return_fig=True)
-			fig.tight_layout()
-			figures.append(fig)
-		return figures
-	except ValueError as e:
-		print(e)
-		return []

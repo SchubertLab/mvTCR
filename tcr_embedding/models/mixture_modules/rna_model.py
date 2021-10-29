@@ -109,15 +109,13 @@ class RnaModel(VAEBaseModel):
 				 model_type='poe',
 				 conditional=None,
 				 optimization_mode_params=None,
+				 label_key=None,
 				 device=None
 				 ):
 
 		super(RnaModel, self).__init__(adata, params_architecture, model_type, conditional,
-									   optimization_mode_params, device)
-		rna_params = params_architecture['rna']
-		joint_params = params_architecture['joint']
-
-		rna_params['xdim'] = adata[0].X.shape[1]
+									   optimization_mode_params, label_key, device)
+		self.params_rna['xdim'] = adata[0].X.shape[1]
 
 		num_conditional_labels = 0
 		cond_dim = 0
@@ -126,14 +124,14 @@ class RnaModel(VAEBaseModel):
 				num_conditional_labels = adata.obsm[self.conditional].shape[1]
 			else:
 				num_conditional_labels = len(adata.obs[self.conditional].unique())
-			if 'c_embedding_dim' not in joint_params:
+			if 'c_embedding_dim' not in self.params_joint:
 				cond_dim = 20
 			else:
-				cond_dim = joint_params['c_embedding_dim']
-		joint_params['num_conditional_labels'] = num_conditional_labels
-		joint_params['cond_dim'] = cond_dim
+				cond_dim = self.params_joint['c_embedding_dim']
+		self.params_joint['num_conditional_labels'] = num_conditional_labels
+		self.params_joint['cond_dim'] = cond_dim
 
-		self.model = RnaModelTorch(rna_params, joint_params)
+		self.model = RnaModelTorch(self.params_rna, self.params_joint)
 
 	def calculate_loss(self, rna_pred, rna, tcr_pred, tcr):
 		rna_loss = self.loss_weights[0] * self.loss_function_rna(rna_pred, rna)

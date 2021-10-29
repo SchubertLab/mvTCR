@@ -31,6 +31,7 @@ class VAEBaseModel(ABC):
 				 metadata=None,
 				 conditional=None,
 				 optimization_mode_params=None,
+				 label_key=None,
 				 device=None):
 		"""
 		VAE Base Model, used for both single and joint models
@@ -45,11 +46,14 @@ class VAEBaseModel(ABC):
 		self.params_tcr = None
 		self.params_rna = None
 		self.params_joint = params_architecture['joint']
+		self.params_supervised = None
 
 		if 'tcr' in params_architecture:
 			self.params_tcr = params_architecture['tcr']
 		if 'rna' in params_architecture:
 			self.params_rna = params_architecture['rna']
+		if 'supervised' in params_architecture:
+			self.params_supervised = params_architecture['supervised']
 
 		if self.params_tcr is None and self.params_rna is None:
 			raise ValueError('Please specify either tcr, rna, or both hyperparameters.')
@@ -59,6 +63,7 @@ class VAEBaseModel(ABC):
 
 		self.conditional = conditional
 		self.optimization_mode_params = optimization_mode_params
+		self.label_key = label_key
 
 		self.device = device
 		if self.device is None:
@@ -88,6 +93,10 @@ class VAEBaseModel(ABC):
 		# Model
 		self.model = None
 		self.optimizer = None
+		self.supervised_model = None
+		if self.label_key is not None:
+			assert self.params_supervised is not None, 'Please specify parameters for supervised model'
+			self.supervised_model = None  # todo
 
 		# datasets
 		self.max_seq_length = self.get_max_tcr_length()
@@ -95,7 +104,7 @@ class VAEBaseModel(ABC):
 			metadata = []
 		if balanced_sampling is not None and balanced_sampling not in metadata:
 			metadata.append(balanced_sampling)
-		self.data_train, self.data_val = initialize_data_loader(adata, metadata, conditional, None,
+		self.data_train, self.data_val = initialize_data_loader(adata, metadata, conditional, label_key,
 																balanced_sampling, self.batch_size)
 
 	def train(self,
@@ -163,6 +172,8 @@ class VAEBaseModel(ABC):
 		rna_loss_total = []
 		tcr_loss_total = []
 		kld_loss_total = []
+		cls_loss_total = []
+		cls_acc_total = []
 
 		for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
 			rna = rna.to(self.device)
@@ -176,8 +187,15 @@ class VAEBaseModel(ABC):
 			z, mu, logvar, rna_pred, tcr_pred = self.model(rna, tcr, seq_len, conditional)
 			kld_loss, z = self.calculate_kld_loss(mu, logvar, epoch)
 			rna_loss, tcr_loss = self.calculate_loss(rna_pred, rna, tcr_pred, tcr)
-
 			loss = kld_loss + rna_loss + tcr_loss
+
+			if self.supervised_model is not None:
+				prediction_label = self.forward_supervised(z)
+				cls_acc = torch.sum(torch.eq(prediction_label, labels))
+				cls_loss = self.calculate_classification_loss(prediction_label, labels)
+				loss += cls_loss
+				cls_loss_total.append(cls_loss)
+				cls_acc_total.append(cls_acc)
 
 			loss_total.append(loss)
 			rna_loss_total.append(rna_loss)
@@ -197,6 +215,12 @@ class VAEBaseModel(ABC):
 						  f'{phase} RNA Loss': rna_loss_total,
 						  f'{phase} TCR Loss': tcr_loss_total,
 						  f'{phase} KLD Loss': kld_loss_total}
+
+		if self.supervised_model is not None:
+			cls_loss_total = torch.stack(cls_loss_total).mean().item()
+			summary_losses[f'{phase} CLS Loss'] = cls_loss_total
+			summary_losses[f'{phase} CLS Accuracy'] = cls_acc_total
+
 		return summary_losses
 
 	def log_losses(self, summary_losses, epoch):
@@ -298,6 +322,32 @@ class VAEBaseModel(ABC):
 			rnas.obs[metadata] = adata_latent.obs[metadata]
 		return rnas
 
+	def predict_label(self, adata):
+		data, _ = initialize_data_loader(adata, None, self.conditional, self.label_key,
+													None, self.batch_size)
+		prediction_total = []
+		with torch.no_grad():
+			for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
+				rna = rna.to(self.device)
+				tcr = tcr.to(self.device)
+
+				if self.conditional is not None:
+					conditional = conditional.to(self.device)
+				else:
+					conditional = None
+
+				z = self.model(rna, tcr, seq_len, conditional)
+				prediction = self.forward_supervised(z)
+				prediction_total.append(prediction)
+		prediction_total = torch.stack(prediction_total).cpu().detach().numpy()
+		return prediction_total
+
+	# <- semi-supervised model ->
+	def forward_supervised(self, z):
+		z_ = self.model.get_latent_from_z(z)
+		prediction = self.supervised_model(z_)
+		raise prediction
+
 	# <- loss functions ->
 	@abstractmethod
 	def calculate_loss(self, rna_pred, rna, tcr_pred, tcr):
@@ -313,6 +363,11 @@ class VAEBaseModel(ABC):
 		:return:
 		"""
 		raise NotImplementedError('Implement this in the different model versions')
+
+	def calculate_classification_loss(self, prediction, labels):
+		loss = self.loss_function_class(prediction, labels)
+		loss = self.loss_weights[3] * loss
+		return loss
 
 	def get_kl_annealing_factor(self, epoch):
 		"""
