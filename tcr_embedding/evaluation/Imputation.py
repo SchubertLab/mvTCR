@@ -6,15 +6,13 @@ import tcr_embedding.evaluation.Metrics as Metrics
 import scanpy as sc
 
 
-def run_imputation_evaluation(data_full, embedding_function, query_source='val', use_non_binder=True,
-                              use_reduced_binders=True, num_neighbors=5, label_pred='binding_name'):
+def run_imputation_evaluation(data_full, embedding_function, query_source='val',
+                              num_neighbors=5, label_pred='binding_name'):
     """
     Function for evaluating the embedding quality based upon imputation in the 10x dataset
     :param data_full: anndata object containing the full cell data (TCR + Genes) (train, val, test)
     :param embedding_function: function calculating the latent space for a single input
     :param query_source: str 'val' or 'test' to choose between evaluation mode
-    :param use_non_binder: bool filter out non binding TCRs
-    :param use_reduced_binders: if true antigen with low amount of tcrs are regarded as non binders
     :param num_neighbors: amount of neighbors for knn classification
     :param label_pred: label of the collumn used for prediction
     :return: dictionary {metric: summary} containing the evaluation scores
@@ -24,10 +22,6 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
         data_query = data_full[data_full.obs['set'] == query_source]
 
         assert len(data_query) > 0, 'Empty query set. Specifier are "val" or "test"'
-
-        if label_pred == 'binding_name':
-            data_atlas, data_query = filter_data(data_atlas, data_query, use_non_binder=use_non_binder,
-                                                 use_reduced_binders=use_reduced_binders)
 
         embedding_atlas = embedding_function(data_atlas)
         embedding_query = embedding_function(data_query)
@@ -39,44 +33,6 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
         print('NaNs in the latent space')
         return None
     return scores
-
-
-def filter_data(data_atlas, data_query, use_non_binder=True, use_reduced_binders=True):
-    """
-    Select data on which evaluation is performed
-    :param data_atlas: annData object containing the full atlas cell data
-    :param data_query: anndata object containing the full query cell data
-    :param use_non_binder: if true tcrs without specificity are filtered out
-    :param use_reduced_binders: if true antigen with low amount of tcrs are regarded as non binders
-    :return: 2 anndata objects containing only the filtered data
-    """
-    def general_filter(data):
-        """
-        Filter that should be applied to both datasets
-        :param data: anndata object containing cell data
-        :return: filtered anndata object
-        """
-        data = data[data.obs['has_ir'] == 'True']
-        data = data[data.obs['multi_chain'] == 'False']
-        if use_reduced_binders:
-            # List of antigens from David Fischer's paper, basically the 8 most common antigens
-            high_antigen_count = ['A0201_ELAGIGILTV_MART-1_Cancer_binder',
-                                  'A0201_GILGFVFTL_Flu-MP_Influenza_binder',
-                                  'A0201_GLCTLVAML_BMLF1_EBV_binder',
-                                  'A0301_KLGGALQAK_IE-1_CMV_binder',
-                                  'A0301_RLRAEAQVK_EMNA-3A_EBV_binder',
-                                  'A1101_IVTDFSVIK_EBNA-3B_EBV_binder',
-                                  'A1101_AVFDRKSDAK_EBNA-3B_EBV_binder',
-                                  'B0801_RAKFKQLL_BZLF1_EBV_binder']
-            data.obs['binding_label'][~data.obs['binding_name'].isin(high_antigen_count)] = -1
-            data.obs['binding_name'][~data.obs['binding_name'].isin(high_antigen_count)] = 'no_data'
-        if not use_non_binder:
-            data = data[data.obs['binding_label'] != -1]
-        return data
-
-    data_atlas = general_filter(data_atlas)
-    data_query = general_filter(data_query)
-    return data_atlas, data_query
 
 
 def get_imputation_scores(embedding_atlas, embedding_query, label_atlas, label_embedding, num_neighbors=5):

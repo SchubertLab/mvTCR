@@ -76,7 +76,6 @@ class VAEBaseModel(ABC):
 		self.best_optimization_metric = None
 		self.best_loss = None
 		self.no_improvements = 0
-		self.kl_annealing_epochs = None
 
 		# loss functions
 		self.loss_function_rna = nn.MSELoss()

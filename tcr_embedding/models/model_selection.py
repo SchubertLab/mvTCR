@@ -50,15 +50,19 @@ def complete_params_experiment(params):
 def objective(trial, adata, suggest_params, params_experiment, optimization_mode_params):
     params_experiment = complete_params_experiment(params_experiment)
 
-    params_architecture = suggest_params(trial)  # todo add kld loss
+    params_architecture = suggest_params(trial)
+    if 'rna_weight' in optimization_mode_params:
+        rna_weight = optimization_mode_params['rna_weight']
+        params_architecture['loss_weights'] = params_architecture['loss_weights'].append(rna_weight)
+
     comet = utils.initialize_comet(params_architecture, params_experiment)
 
     model = utils.select_model_by_name(params_experiment['model_name'])
     model = model(adata, params_architecture, params_experiment['balanced_sampling'], params_experiment['metadata'],
-                  params_experiment['conditional'], params_experiment['optimization_mode_params'],
+                  params_experiment['conditional'], optimization_mode_params,
                   params_experiment['label_key'], params_experiment['device'])
 
-    model.train(params_experiment['n_epochs'], params_experiment['batch_size'], params_experiment['learning_rate'],
+    model.train(params_experiment['n_epochs'], params_architecture['batch_size'], params_architecture['learning_rate'],
                 params_architecture['loss_weights'], params_experiment['kl_annealing_epochs'],
                 params_experiment['early_stop'], params_experiment['save_path'], comet)
 

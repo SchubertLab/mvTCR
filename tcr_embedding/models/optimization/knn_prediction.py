@@ -13,7 +13,6 @@ def report_knn_prediction(adata, model, optimization_mode_params, batch_size, ep
     test_embedding_func = get_model_prediction_function(model, batch_size=batch_size)
     try:
         summary = run_imputation_evaluation(adata, test_embedding_func, query_source='val',
-                                            use_non_binder=True, use_reduced_binders=True,
                                             label_pred=optimization_mode_params['prediction_column'])
     except:
         print(f'kNN did not work')
