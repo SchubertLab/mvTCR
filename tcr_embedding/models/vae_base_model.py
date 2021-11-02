@@ -110,7 +110,7 @@ class VAEBaseModel(ABC):
 
 	def train(self,
 			  n_epochs=100,
-			  batch_size=64,
+			  batch_size=512,
 			  learning_rate=3e-4,
 			  loss_weights=None,
 			  kl_annealing_epochs=None,
@@ -261,6 +261,7 @@ class VAEBaseModel(ABC):
 	def do_early_stopping(self, val_loss, early_stop, save_path, epoch):
 		if val_loss < self.best_loss:
 			self.best_loss = val_loss
+			self.best_optimization_metric = val_loss
 			self.save(os.path.join(save_path, 'best_model_by_reconstruction.pt'))
 			self.no_improvements = 0
 		else:

@@ -69,26 +69,20 @@ def load_model(adata, path_model):
     return model
 
 
-def initialize_comet(params_hpo, params_fixed):
-    if 'comet' not in params_fixed or params_fixed['comet'] is None:
-        return None
-
-    experiment_name = params_fixed['name']
-
+def initialize_comet(params_architecture, params_experiment):
     path_key = os.path.join(os.path.dirname(__file__), '../config/API_key.txt')
     with open(path_key) as f:
         comet_key = f.read()
-    experiment = Experiment(api_key=comet_key, workspace=params_fixed['workspace'], project_name=experiment_name)
 
-    experiment.log_parameters(params_hpo)
-    experiment.log_parameters(params_hpo['scRNA_model_hyperparams'], prefix='scRNA')
-    experiment.log_parameters(params_hpo['seq_model_hyperparams'], prefix='seq')
+    experiment_name = params_experiment['name']
+    workspace = params_architecture['comet_workspace']
+    experiment = Experiment(api_key=comet_key, workspace=workspace, project_name=experiment_name)
 
-    experiment.log_parameters(params_fixed, prefix='fixed_params')
+    experiment.log_parameters(params_experiment, prefix='fixed_')
 
-    if params_hpo['seq_model_arch'] == 'CNN':
-        experiment.log_parameters(params_hpo['seq_model_hyperparams']['encoder'], prefix='seq_encoder')
-        experiment.log_parameters(params_hpo['seq_model_hyperparams']['decoder'], prefix='seq_decoder')
+    for tag in ['rna', 'tcr', 'rna', 'joint']:
+        if tag in params_architecture:
+            experiment.log_parameters(params_architecture[tag], prefix=tag)
     return experiment
 
 
