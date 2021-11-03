@@ -2,12 +2,11 @@ import operator
 from tcr_embedding.models.pertubation_prediction import run_scgen_cross_validation
 
 
-def report_modulation_prediction(adata, model, optimization_mode_params, batch_size, epoch, comet):
+def report_modulation_prediction(adata, model, optimization_mode_params, epoch, comet):
     summary = run_scgen_cross_validation(adata, optimization_mode_params['column_fold'],
                                          model, optimization_mode_params['column_perturbation'],
                                          optimization_mode_params['indicator_perturbation'],
-                                         optimization_mode_params['column_cluster'],
-                                         batch_size)
+                                         optimization_mode_params['column_cluster'])
     score = summary['avg_r_squared']
     if comet is not None:
         for key, value in summary.items():

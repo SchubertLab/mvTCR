@@ -13,7 +13,7 @@ def none_model(hyperparams, hdim, xdim):
 class RnaModelTorch(nn.Module):
 	def __init__(self, rna_params, joint_params):
 		super(RnaModelTorch, self).__init__()
-		xdim = joint_params['xdim']
+		xdim = rna_params['xdim']
 		hdim = joint_params['hdim']
 		num_conditional_labels = joint_params['num_conditional_labels']
 		cond_dim = joint_params['cond_dim']
@@ -133,12 +133,13 @@ class RnaModel(VAEBaseModel):
 				cond_dim = self.params_joint['c_embedding_dim']
 		self.params_joint['num_conditional_labels'] = num_conditional_labels
 		self.params_joint['cond_dim'] = cond_dim
+		self.params_joint['cond_input'] = conditional is not None
 
 		self.model = RnaModelTorch(self.params_rna, self.params_joint)
 
 	def calculate_loss(self, rna_pred, rna, tcr_pred, tcr):
 		rna_loss = self.loss_weights[0] * self.loss_function_rna(rna_pred, rna)
-		tcr_loss = torch.FloatTensor([0])
+		tcr_loss = torch.FloatTensor([0]).to(self.device)
 		return rna_loss, tcr_loss
 
 	def calculate_kld_loss(self, mu, logvar, epoch):

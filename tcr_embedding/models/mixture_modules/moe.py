@@ -12,7 +12,7 @@ class MoEModelTorch(nn.Module):
 	def __init__(self, tcr_params, rna_params, joint_params):
 		super(MoEModelTorch, self).__init__()
 
-		xdim = joint_params['xdim']
+		xdim = rna_params['xdim']
 		hdim = joint_params['hdim']
 		num_conditional_labels = joint_params['num_conditional_labels']
 		cond_dim = joint_params['cond_dim']
@@ -181,6 +181,7 @@ class MoEModel(VAEBaseModel):
 				cond_dim = self.params_joint['c_embedding_dim']
 		self.params_joint['num_conditional_labels'] = num_conditional_labels
 		self.params_joint['cond_dim'] = cond_dim
+		self.params_joint['cond_input'] = conditional is not None
 
 		self.model = MoEModelTorch(self.params_tcr, self.params_rna, self.params_joint)
 

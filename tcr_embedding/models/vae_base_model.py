@@ -84,7 +84,7 @@ class VAEBaseModel(ABC):
 		self.loss_function_class = nn.CrossEntropyLoss()
 
 		# training params
-		self.batch_size = 512
+		self.batch_size = params_architecture['batch_size']
 		self.loss_weights = None
 		self.comet = None
 		self.kl_annealing_epochs = None
@@ -108,7 +108,7 @@ class VAEBaseModel(ABC):
 																balanced_sampling, self.batch_size)
 
 	def train(self,
-			  n_epochs=100,
+			  n_epochs=200,
 			  batch_size=512,
 			  learning_rate=3e-4,
 			  loss_weights=None,
@@ -147,11 +147,10 @@ class VAEBaseModel(ABC):
 		self.model = self.model.to(self.device)
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learning_rate)
 
-		for epoch in tqdm(n_epochs):
+		for epoch in tqdm(range(n_epochs)):
 			self.model.train()
 			train_loss_summary = self.run_epoch(epoch, phase='train')
 			self.log_losses(train_loss_summary, epoch)
-			self.run_backward_pass(train_loss_summary['train Loss'])
 
 			self.model.eval()
 			with torch.no_grad():
@@ -175,7 +174,7 @@ class VAEBaseModel(ABC):
 		cls_loss_total = []
 		cls_acc_total = []
 
-		for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
+		for rna, tcr, seq_len, _, labels, conditional in data:
 			rna = rna.to(self.device)
 			tcr = tcr.to(self.device)
 
@@ -197,19 +196,22 @@ class VAEBaseModel(ABC):
 				cls_loss_total.append(cls_loss)
 				cls_acc_total.append(cls_acc)
 
+			if phase == 'train':
+				self.run_backward_pass(loss)
+
 			loss_total.append(loss)
 			rna_loss_total.append(rna_loss)
 			tcr_loss_total.append(tcr_loss)
 			kld_loss_total.append(kld_loss)
 
+			if torch.isnan(loss):
+				print(f'ERROR: NaN in loss.')
+				return
+
 		loss_total = torch.stack(loss_total).mean().item()
 		rna_loss_total = torch.stack(rna_loss_total).mean().item()
 		tcr_loss_total = torch.stack(tcr_loss_total).mean().item()
 		kld_loss_total = torch.stack(kld_loss_total).mean().item()
-
-		if torch.isnan(loss_total):
-			print(f'ERROR: NaN in loss.')
-			return
 
 		summary_losses = {f'{phase} Loss': loss_total,
 						  f'{phase} RNA Loss': rna_loss_total,
@@ -241,26 +243,25 @@ class VAEBaseModel(ABC):
 		if name == 'reconstruction':
 			return
 		if name == 'knn_prediction':
-			score, relation = report_knn_prediction(self.adata, self, self.optimization_mode_params, self.batch_size,
+			score, relation = report_knn_prediction(self.adata, self, self.optimization_mode_params,
 													epoch, self.comet)
 		elif name == 'modulation_prediction':
 			score, relation = report_modulation_prediction(self.adata, self, self.optimization_mode_params,
-														   self.batch_size, epoch, self.comet)
+														   epoch, self.comet)
 		elif name == 'pseudo_metric':
-			score, relation = report_pseudo_metric(self.adata, self, self.optimization_mode_params, self.batch_size,
+			score, relation = report_pseudo_metric(self.adata, self, self.optimization_mode_params,
 												   epoch, self.comet)
 		else:
 			raise ValueError('Unknown Optimization mode')
-		if relation(score, self.best_optimization_metric):
+		if self.best_optimization_metric is None or relation(score, self.best_optimization_metric):
 			self.best_optimization_metric = score
 			self.save(os.path.join(save_path, f'best_model_by_metric.pt'))
-			if self.comet is not None:
-				self.comet.log_metric('max_metric', self.best_optimization_metric, epoch=epoch)
+		if self.comet is not None:
+			self.comet.log_metric('max_metric', self.best_optimization_metric, epoch=epoch)
 
 	def do_early_stopping(self, val_loss, early_stop, save_path, epoch):
-		if val_loss < self.best_loss:
+		if self.best_loss is None or val_loss < self.best_loss:
 			self.best_loss = val_loss
-			self.best_optimization_metric = val_loss
 			self.save(os.path.join(save_path, 'best_model_by_reconstruction.pt'))
 			self.no_improvements = 0
 		else:
@@ -268,7 +269,7 @@ class VAEBaseModel(ABC):
 		if early_stop is not None and self.no_improvements > early_stop:
 			print('Early stopped')
 			return True
-		self.comet.log_metric('Epochs without Improvements', self.no_improvements, epoch)
+		self.comet.log_metric('Epochs without Improvements', self.no_improvements, epoch=epoch)
 		return False
 
 	# <- prediction functions ->
@@ -286,9 +287,10 @@ class VAEBaseModel(ABC):
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
 			self.model.eval()
-			for rna, tcr, size_factor, seq_len, metadata_batch, conditional in data_embed:
+			for rna, tcr, seq_len, metadata_batch, labels, conditional in data_embed:
 				rna = rna.to(self.device)
 				tcr = tcr.to(self.device)
+
 				if self.conditional is not None:
 					conditional = conditional.to(self.device)
 				else:

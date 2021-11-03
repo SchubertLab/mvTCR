@@ -7,23 +7,6 @@ import random
 from tcr_embedding.dataloader.Dataset import JointDataset
 
 
-# <- functions for the main data loader ->
-def initialize_data_loader(adata, metadata, conditional, label_key, balanced_sampling, batch_size):
-    train_datasets, val_datasets, train_mask = create_datasets(adata, 'set', metadata, conditional, label_key)
-
-    if balanced_sampling is None:
-        train_loader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker)
-    else:
-        sampling_weights = calculate_sampling_weights(adata, train_mask, class_column=balanced_sampling)
-        sampler = WeightedRandomSampler(weights=sampling_weights, num_samples=len(sampling_weights),
-                                        replacement=True)
-        # shuffle is mutually exclusive to sampler, but sampler is anyway shuffled
-        train_loader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False,
-                                  sampler=sampler, worker_init_fn=seed_worker)
-    val_loader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False)
-    return train_loader, val_loader
-
-
 def create_datasets(adata, val_split, metadata=None, conditional=None, labels=None):
     """
     Create torch Dataset, see above for the input
@@ -41,13 +24,13 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
     if val_split is not None:
         train_mask = (adata.obs[val_split] == 'train').values
     else:
-        train_mask = [1] * adata.shape[0]
+        train_mask = np.ones(shape=(len(adata), ), dtype=bool)
 
     # Save dataset splits
     rna_train = adata.X[train_mask]
     rna_val = adata.X[~train_mask]
 
-    tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)
+    tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)  # todo
     tcr_train = tcr_seq[train_mask]
     tcr_val = tcr_seq[~train_mask]
 
@@ -79,6 +62,23 @@ def seed_worker(worker_id):
     random.seed(worker_seed)
 
 
+# <- functions for the main data loader ->
+def initialize_data_loader(adata, metadata, conditional, label_key, balanced_sampling, batch_size):
+    train_datasets, val_datasets, train_mask = create_datasets(adata, 'set', metadata, conditional, label_key)
+
+    if balanced_sampling is None:
+        train_loader = DataLoader(train_datasets, batch_size=batch_size, shuffle=True, worker_init_fn=seed_worker)
+    else:
+        sampling_weights = calculate_sampling_weights(adata, train_mask, class_column=balanced_sampling)
+        sampler = WeightedRandomSampler(weights=sampling_weights, num_samples=len(sampling_weights),
+                                        replacement=True)
+        # shuffle is mutually exclusive to sampler, but sampler is anyway shuffled
+        train_loader = DataLoader(train_datasets, batch_size=batch_size, shuffle=False,
+                                  sampler=sampler, worker_init_fn=seed_worker)
+    val_loader = DataLoader(val_datasets, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader
+
+
 def calculate_sampling_weights(adata, train_mask, class_column):
     """
     Calculate sampling weights for more balanced sampling in case of imbalanced classes,
@@ -102,7 +102,7 @@ def calculate_sampling_weights(adata, train_mask, class_column):
 # <- data loader for prediction ->
 def initialize_prediction_loader(adata, metadata, batch_size):
     prediction_dataset, _, _ = create_datasets(adata, val_split=None, metadata=metadata)
-    prediction_loader = DataLoader(prediction_dataset, batch_size=batch_size, shuffle=False, collate_fn=None)
+    prediction_loader = DataLoader(prediction_dataset, batch_size=batch_size, shuffle=False)
     return prediction_loader
 
 

@@ -14,7 +14,6 @@ def none_model(hyperparams, hdim, xdim):
 class SeparateModelTorch(nn.Module):
 	def __init__(self, tcr_params, rna_params, joint_params):
 		super(SeparateModelTorch, self).__init__()
-		xdim = joint_params['xdim']
 		hdim = joint_params['hdim']
 		num_conditional_labels = joint_params['num_conditional_labels']
 		cond_dim = joint_params['cond_dim']
@@ -36,12 +35,16 @@ class SeparateModelTorch(nn.Module):
 		self.beta_encoder = TransformerEncoder(tcr_params, hdim//2, num_seq_labels)
 		self.beta_decoder = TransformerDecoder(tcr_params, hdim*num_modalities, num_seq_labels)
 
-		if rna_params is None:
+		if not self.use_rna:
+			xdim = None
 			self.gene_encoder = none_model(rna_params, xdim, hdim)
 			self.gene_decoder = none_model(rna_params, xdim, hdim)
 		else:
+			xdim = rna_params['xdim']
 			self.gene_encoder = build_mlp_encoder(rna_params, xdim, hdim)
 			self.gene_decoder = build_mlp_decoder(rna_params, xdim, hdim*num_modalities)
+			# used for NB loss
+			self.theta = torch.nn.Parameter(torch.randn(xdim))
 
 		if cond_dim > 0:
 			self.cond_emb = torch.nn.Embedding(num_conditional_labels, cond_dim)
@@ -53,8 +56,6 @@ class SeparateModelTorch(nn.Module):
 		self.shared_decoder = MLP(zdim+cond_dim, hdim*num_modalities, shared_hidden[::-1], activation, activation,
 								  dropout, batch_norm, regularize_last_layer=True)
 
-		# used for NB loss
-		self.theta = torch.nn.Parameter(torch.randn(xdim))
 
 	def forward(self, rna, tcr, tcr_len, conditional=None):
 		"""
@@ -77,7 +78,7 @@ class SeparateModelTorch(nn.Module):
 		if conditional is not None:  # more efficient than doing two concatenations
 			cond_emb_vec = self.cond_emb(conditional)
 
-		if self.use_rna is None:  # Can't use NoneType, as NoneType can't be a key for dict, so str is used here
+		if not self.use_rna:
 			if conditional is not None and self.cond_input:  # more efficient than doing two concatenations
 				joint_feature = torch.cat([h_alpha, h_beta, cond_emb_vec], dim=-1)  # shape=[batch_size, hdim+cond_dim]
 			else:
@@ -98,7 +99,7 @@ class SeparateModelTorch(nn.Module):
 		else:
 			z_input = z
 		joint_dec_feature = self.shared_decoder(z_input)  # shape=[batch_size, hdim*2]
-		if self.use_rna == 'None':
+		if not self.use_rna:
 			rna_pred = None
 		else:
 			rna_pred = self.gene_decoder(joint_dec_feature)  # shape=[batch_size, num_genes]
@@ -160,7 +161,8 @@ class SeparateModel(VAEBaseModel):
 		self.params_tcr['max_tcr_length'] = adata.obsm['alpha_seq'].shape[1]
 		self.params_tcr['num_seq_labels'] = len(self.aa_to_id)
 
-		self.params_rna['xdim'] = adata[0].X.shape[1]
+		if self.params_rna is not None:
+			self.params_rna['xdim'] = adata[0].X.shape[1]
 
 		num_conditional_labels = 0
 		cond_dim = 0
@@ -175,6 +177,7 @@ class SeparateModel(VAEBaseModel):
 				cond_dim = self.params_joint['c_embedding_dim']
 		self.params_joint['num_conditional_labels'] = num_conditional_labels
 		self.params_joint['cond_dim'] = cond_dim
+		self.params_joint['cond_input'] = conditional is not None
 
 		self.model = SeparateModelTorch(self.params_tcr, self.params_rna, self.params_joint)
 
@@ -187,7 +190,7 @@ class SeparateModel(VAEBaseModel):
 		else:  # For CNN, as it predicts start token
 			tcr_loss = self.loss_weights[1] * self.loss_function_tcr(tcr_pred.flatten(end_dim=1), tcr.flatten())
 
-		rna_loss = torch.FloatTensor([0])
+		rna_loss = torch.FloatTensor([0]).to(self.device)
 		if rna_pred is not None:
 			rna_loss = self.loss_weights[0] * self.loss_function_rna(rna_pred, rna)
 		return rna_loss, tcr_loss

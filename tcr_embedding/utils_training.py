@@ -74,8 +74,8 @@ def initialize_comet(params_architecture, params_experiment):
     with open(path_key) as f:
         comet_key = f.read()
 
-    experiment_name = params_experiment['name']
-    workspace = params_architecture['comet_workspace']
+    experiment_name = params_experiment['study_name']
+    workspace = params_experiment['comet_workspace']
     experiment = Experiment(api_key=comet_key, workspace=workspace, project_name=experiment_name)
 
     experiment.log_parameters(params_experiment, prefix='fixed_')
@@ -90,15 +90,18 @@ def select_model_by_name(model_name):
     """
     Select between modeltypes (e.g. single, concat, poe, moe, ...) by an identifier
     :param model_name:  str indicating the model type, type is chosen, when following indicator are part of the string
-                        default: joint model
-                        'seperate': for individual alpha beta chain representation
+                        'concat': for individual alpha beta chain representation
                         'moe': mixture of experts
                         'poe': product of experts
     :return: class of the corresponding model
     """
+    if model_name.startswith('debug_'):
+        model_name = model_name.replace('debug_', '')
+
     init_dict = {
         'rna': RnaModel,
-        'separate': SeparateModel,
+        'concat': SeparateModel,
+        'tcr': SeparateModel,
         'moe': MoEModel,
         'poe': PoEModel,
     }

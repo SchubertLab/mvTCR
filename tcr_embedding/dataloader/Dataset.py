@@ -21,7 +21,7 @@ class JointDataset(torch.utils.data.Dataset):
 		:param labels: list of labels
 		:param conditional: list of conditionales
 		"""
-		self.metadata = np.concatenate(metadata, axis=0).tolist()
+		self.metadata = metadata.tolist()
 		self.tcr_length = torch.LongTensor(tcr_length)
 
 		if conditional is not None:
@@ -31,8 +31,8 @@ class JointDataset(torch.utils.data.Dataset):
 		else:
 			self.conditional = None
 
-		self.rna_data = torch.Tensor(rna_data)
-		self.size_factors = self.scRNA_datas.sum(1)
+		self.rna_data = self.create_tensor(rna_data)
+		# self.size_factors = self.rna_data.sum(1)
 
 		self.tcr_data = torch.LongTensor(tcr_data)
 
@@ -41,7 +41,7 @@ class JointDataset(torch.utils.data.Dataset):
 		else:
 			self.labels = None
 
-	def _create_tensor(self, x):
+	def create_tensor(self, x):
 		if sparse.issparse(x):
 			x = x.todense()
 			return torch.FloatTensor(x)
@@ -49,22 +49,22 @@ class JointDataset(torch.utils.data.Dataset):
 			return torch.FloatTensor(x)
 
 	def __len__(self):
-		return len(self.scRNA_datas)
+		return len(self.rna_data)
 
 	def __getitem__(self, idx):
 		if self.labels is None:
 			if self.conditional is None:
-				return self.rna_data[idx], self.tcr_data[idx], self.size_factors[idx], self.tcr_length[idx], \
+				return self.rna_data[idx], self.tcr_data[idx], self.tcr_length[idx], \
 					   self.metadata[idx], False, False
 			else:
-				return self.rna_data[idx], self.tcr_data[idx], self.size_factors[idx], self.seq_len[idx], \
+				return self.rna_data[idx], self.tcr_data[idx], self.tcr_len[idx], \
 					   self.metadata[idx], False, self.conditional[idx]
 		else:
 			if self.conditional is None:
-				return self.rna_data[idx], self.tcr_datas[idx], self.size_factors[idx], self.seq_len[idx], \
+				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_len[idx], \
 					   self.metadata[idx], self.labels[idx], False
 			else:
-				return self.rna_data[idx], self.tcr_datas[idx], self.size_factors[idx], self.seq_len[idx], \
+				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_len[idx], \
 					   self.metadata[idx], self.labels[idx], self.conditional[idx]
 
 

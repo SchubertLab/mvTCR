@@ -29,9 +29,9 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
         scores = get_imputation_scores(embedding_atlas, embedding_query,
                                        data_atlas.obs[label_pred], data_query.obs[label_pred],
                                        num_neighbors=num_neighbors)
-    except ValueError:
-        print('NaNs in the latent space')
-        return None
+    except ValueError as e:
+        print(e)
+        raise ValueError('Imputation failed')
     return scores
 
 

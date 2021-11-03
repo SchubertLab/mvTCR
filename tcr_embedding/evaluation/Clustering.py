@@ -1,7 +1,6 @@
 import random
 import tcr_embedding.evaluation.WrapperFunctions as Wrapper
 import tcr_embedding.evaluation.Metrics as Metrics
-from manuscript.constants import ANTIGEN_COLORS
 
 import scanpy as sc
 from anndata import AnnData
@@ -61,8 +60,6 @@ def predict_clustering(adata, params, visualize=False, name_label=None):
     if visualize:
         sc.tl.umap(adata)
         palette = None
-        if name_label == 'binding_name':
-            palette = ANTIGEN_COLORS
         sc.pl.umap(adata, color=name_label, palette=palette)
         sc.pl.umap(adata, color='leiden', title=f'resolution = {params["resolution"]}')
 

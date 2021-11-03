@@ -1,5 +1,6 @@
 import optuna
 import os
+import sys
 import importlib
 
 import tcr_embedding.utils_training as utils
@@ -10,10 +11,15 @@ def get_parameter_functions(model_name, optimization_mode):
 
     if optimization_mode not in ['pseudo_metric', 'knn_prediction', 'modulation_prediction']:
         model_name += '_equal'
+
+    path_module = os.path.join(os.path.dirname(__file__), '..', 'config_optuna')
+    sys.path.append(path_module)
+    model_name = os.path.join(model_name)
     config_module = importlib.import_module(model_name)
-    init_params = getattr(config_module, 'init_params')
+    # init_params = getattr(config_module, 'init_params')
     suggest_params = getattr(config_module, 'suggest_params')
-    return init_params, suggest_params
+    # return init_params, suggest_params
+    return suggest_params
 
 
 def get_direction(optimization_mode):
@@ -36,12 +42,12 @@ def complete_params_experiment(params):
         'metadata': None,
         'conditional': None,
         'label_key': None,
-        'n_epochs': 100,
+        'n_epochs': 10,
         'kl_annealing_epochs': None,
         'early_stop': None,
         'save_path': '../saved_models/'
     }
-    for key, value in default_values:
+    for key, value in default_values.items():
         if key not in params:
             params[key] = value
     return params
@@ -75,7 +81,7 @@ def objective(trial, adata, suggest_params, params_experiment, optimization_mode
         for subset in ['train', 'val']:
             adata_tmp = adata[adata.obs['set'] == subset]
             latent = model.get_latent(adata_tmp, params_experiment['metadata'], True)
-            title = f''
+            title = f'{state}_{subset}'
             figs = utils.plot_umap_list(latent, title, params_experiment['metadata'])
             for fig, group in zip(figs, params_experiment['metadata']):
                 comet.log_figure(f'{title}_{group}', fig)
@@ -83,18 +89,21 @@ def objective(trial, adata, suggest_params, params_experiment, optimization_mode
     return model.best_optimization_metric
 
 
-def run_model_selection(adata, params_experiment, params_optimization, study_name, num_samples, timeout=None):
+def run_model_selection(adata, params_experiment, params_optimization, num_samples, timeout=None, n_jobs=1):
     sampler = optuna.samplers.TPESampler(seed=42)  # Make the sampler behave in a deterministic way.
 
     direction = get_direction(params_optimization['name'])
 
-    study = optuna.create_study(study_name=study_name, sampler=sampler, storage=params_experiment['save_path'],
+    storage = f'sqlite:///{params_experiment["save_path"]}.db'
+    if os.path.exists(params_experiment['save_path'] + '.db'):
+        os.remove(params_experiment['save_path'] + '.db')
+    study = optuna.create_study(study_name=params_experiment['study_name'], sampler=sampler, storage=storage,
                                 direction=direction, load_if_exists=False)
 
-    init_params, suggest_params = get_parameter_functions(params_experiment['model_name'], params_optimization['name'])
-    study.enqueue_trial(init_params)
+    suggest_params = get_parameter_functions(params_experiment['model_name'], params_optimization['name'])
+    # study.enqueue_trial(init_params)
     study.optimize(lambda trial: objective(trial, adata, suggest_params, params_experiment, params_optimization),
-                   n_trials=num_samples, timeout=timeout)
+                   n_trials=num_samples, timeout=timeout, n_jobs=n_jobs)
 
     pruned_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.PRUNED]
     complete_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.COMPLETE]

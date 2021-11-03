@@ -41,8 +41,7 @@ def get_delta(adata_latent, column_perturbation, indicator_perturbation):
     return delta
 
 
-def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, column_cluster,
-                               batch_size):
+def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, column_cluster):
     """
     Runs perturbation prediction over a specified fold column and evaluates the results
     :param adata: adata object, of the raw data
@@ -53,7 +52,7 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
     :param column_cluster: column indicating the clusters for which the top 100 DEG are determined
     :return: dict, summary over performance on the different splits and aggregation
     """
-    latent_full = model.get_latent([adata], batch_size=batch_size, metadata=[column_fold, column_perturbation], device='cuda')
+    latent_full = model.get_latent(adata, metadata=[column_fold, column_perturbation])
 
     summary_performance = {}
     rs_squared = []
