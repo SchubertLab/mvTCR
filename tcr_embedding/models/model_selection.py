@@ -42,7 +42,7 @@ def complete_params_experiment(params):
         'metadata': None,
         'conditional': None,
         'label_key': None,
-        'n_epochs': 10,
+        'n_epochs': 200,
         'kl_annealing_epochs': None,
         'early_stop': None,
         'save_path': '../saved_models/'

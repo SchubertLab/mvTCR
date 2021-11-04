@@ -11,7 +11,7 @@ def suggest_params(trial):
 
     params = {
         'batch_size': 512,
-        'learning_rate': trial.suggest_float('lr', 1e-5, 1e-2, log=True),
+        'learning_rate': trial.suggest_float('lr', 1e-5, 1e-3, log=True),
         'loss_weights': [1.0, 0.0, loss_weights_kl],
 
         'joint': {

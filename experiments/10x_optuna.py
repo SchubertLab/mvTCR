@@ -1,5 +1,5 @@
 """
-python -u 10x_optuna.py --model debug_poe --donor 1 --split 0
+python -u 10x_optuna.py --model poe --donor 1 --split 0
 """
 # comet-ml must be imported before torch and sklearn
 import comet_ml
@@ -9,6 +9,7 @@ sys.path.append('..')
 
 from tcr_embedding.models.model_selection import run_model_selection
 import tcr_embedding.utils_training as utils
+from tcr_embedding.utils_preprocessing import stratified_group_shuffle_split
 
 import os
 import argparse
@@ -25,13 +26,27 @@ parser.add_argument('--split', type=int, default=0)
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
 
-# todo splitting
+
 adata = utils.load_data('10x')
-adata = adata[adata.obs['set'] != 'test']
 if args.donor is not None:
     adata = adata[adata.obs['donor'] == f'donor_{args.donor}']
 if args.filter_non_binder:
     adata = adata[adata.obs['binding_name'].isin(const.HIGH_COUNT_ANTIGENS)]
+
+
+# subsample to get statistics
+random_seed = args.split
+sub, non_sub = stratified_group_shuffle_split(adata.obs, stratify_col='binding_name', group_col='clonotype',
+                                              val_split=0.25, random_seed=random_seed)
+train_val, test = stratified_group_shuffle_split(sub, stratify_col='binding_name', group_col='clonotype',
+                                                 val_split=0.15, random_seed=random_seed)
+_, val = stratified_group_shuffle_split(train_val, stratify_col='binding_name', group_col='clonotype',
+                                        val_split=0.17647, random_seed=random_seed)
+adata.obs['set'] = 'train'
+adata.obs.loc[non_sub.index, 'set'] = '-'
+adata.obs.loc[val.index, 'set'] = 'val'
+adata.obs.loc[test.index, 'set'] = 'test'
+adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
 params_experiment = {
@@ -52,7 +67,4 @@ params_optimization = {
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
-run_model_selection(adata, params_experiment, params_optimization, 100, timeout, args.gpus)
-
-# adata.obs['binding_name'] = adata.obs['binding_name'].astype(str) potentially needed?
-# todo config_optuna files
+run_model_selection(adata, params_experiment, params_optimization, None, timeout, args.gpus)

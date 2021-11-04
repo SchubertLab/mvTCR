@@ -27,8 +27,8 @@ def suggest_params(trial):
         'rna': None,
         'tcr': {
             'embedding_size': trial.suggest_categorical('tfmr_embedding_size', [16, 32, 64]),
-            'num_heads': trial.suggest_categorical('tfmr_num_heads', [1, 2, 4, 8]),
-            'forward_expansion': trial.suggest_categorical('tfmr_forward_expansion', [1, 2, 4]),
+            'num_heads': trial.suggest_categorical('tfmr_num_heads', [2, 4, 8]),
+            'forward_expansion': 4,
             'encoding_layers': tfmr_encoding_layers,
             'decoding_layers': tfmr_encoding_layers,  # encoding_layers is used here too
             'dropout': trial.suggest_float('tfmr_dropout', 0, 0.3, step=0.05),

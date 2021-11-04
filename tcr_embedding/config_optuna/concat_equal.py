@@ -22,9 +22,9 @@ def suggest_params(trial):
             'hdim': hdim,
             'losses': ['MSE', 'CE'],
             'num_layers': num_layers,
-            'c_embedding_dim': 20,
             'shared_hidden': [shared_hidden] * num_layers,
-            'zdim': trial.suggest_int('zdim', 5, min(shared_hidden, 50), step=5)
+            'zdim': trial.suggest_int('zdim', 5, min(shared_hidden, 50), step=5),
+            'c_embedding_dim': 20,
 
         },
         'rna': {
