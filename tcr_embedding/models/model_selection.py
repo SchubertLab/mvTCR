@@ -53,6 +53,23 @@ def complete_params_experiment(params):
     return params
 
 
+def fail_save(func):
+    # Keeps the HPO running, even when a training run fails.
+    def wrapper(trial, adata, suggest_params, params_experiment, optimization_mode_params):
+        direction = get_direction(optimization_mode_params['name'])
+        try:
+            return func(trial, adata, suggest_params, params_experiment, optimization_mode_params)
+        except KeyboardInterrupt:
+            raise
+        except:
+            if direction == 'maximize':
+                return 0.
+            else:
+                return 5.
+    return wrapper
+
+
+@fail_save
 def objective(trial, adata, suggest_params, params_experiment, optimization_mode_params):
     params_experiment = complete_params_experiment(params_experiment)
 
