@@ -30,7 +30,7 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
     rna_train = adata.X[train_mask]
     rna_val = adata.X[~train_mask]
 
-    tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)  # todo
+    tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)
     tcr_train = tcr_seq[train_mask]
     tcr_val = tcr_seq[~train_mask]
 
