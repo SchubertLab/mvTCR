@@ -72,6 +72,7 @@ def fail_save(func):
 @fail_save
 def objective(trial, adata, suggest_params, params_experiment, optimization_mode_params):
     params_experiment = complete_params_experiment(params_experiment)
+    params_experiment['save_path'] = os.path.join(params_experiment['save_path'], f'trial_{trial.number}')
 
     params_architecture = suggest_params(trial)
     if 'rna_weight' in optimization_mode_params:
