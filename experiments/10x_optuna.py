@@ -37,11 +37,11 @@ if args.filter_non_binder:
 # subsample to get statistics
 random_seed = args.split
 sub, non_sub = stratified_group_shuffle_split(adata.obs, stratify_col='binding_name', group_col='clonotype',
-                                              val_split=0.25, random_seed=random_seed)
+                                              val_split=0.2, random_seed=random_seed)
 train_val, test = stratified_group_shuffle_split(sub, stratify_col='binding_name', group_col='clonotype',
-                                                 val_split=0.15, random_seed=random_seed)
+                                                 val_split=0.20, random_seed=random_seed)
 _, val = stratified_group_shuffle_split(train_val, stratify_col='binding_name', group_col='clonotype',
-                                        val_split=0.17647, random_seed=random_seed)
+                                        val_split=0.25, random_seed=random_seed)
 adata.obs['set'] = 'train'
 adata.obs.loc[non_sub.index, 'set'] = '-'
 adata.obs.loc[val.index, 'set'] = 'val'
