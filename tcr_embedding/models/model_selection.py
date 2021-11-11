@@ -61,7 +61,8 @@ def fail_save(func):
             return func(trial, adata, suggest_params, params_experiment, optimization_mode_params)
         except KeyboardInterrupt:
             raise
-        except:
+        except Exception as e:
+            print(e)
             if direction == 'maximize':
                 return 0.
             else:
@@ -102,9 +103,11 @@ def objective(trial, adata, suggest_params, params_experiment_base, optimization
             latent = model.get_latent(adata_tmp, params_experiment['metadata'], True)
             title = f'{state}_{subset}'
             figs = utils.plot_umap_list(latent, title, params_experiment['metadata'])
-            for fig, group in zip(figs, params_experiment['metadata']):
-                comet.log_figure(f'{title}_{group}', fig)
-    comet.end()
+            if comet is not None:
+                for fig, group in zip(figs, params_experiment['metadata']):
+                    comet.log_figure(f'{title}_{group}', fig)
+    if comet is not None:
+        comet.end()
     return model.best_optimization_metric
 
 

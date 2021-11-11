@@ -70,6 +70,8 @@ def load_model(adata, path_model):
 
 
 def initialize_comet(params_architecture, params_experiment):
+    if params_experiment['comet_workspace'] is None:
+        return None
     path_key = os.path.join(os.path.dirname(__file__), '../config/API_key.txt')
     with open(path_key) as f:
         comet_key = f.read()
@@ -101,6 +103,7 @@ def select_model_by_name(model_name):
     init_dict = {
         'rna': RnaModel,
         'concat': SeparateModel,
+        'separate': SeparateModel,
         'tcr': SeparateModel,
         'moe': MoEModel,
         'poe': PoEModel,

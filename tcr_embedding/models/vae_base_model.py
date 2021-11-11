@@ -269,7 +269,8 @@ class VAEBaseModel(ABC):
 		if early_stop is not None and self.no_improvements > early_stop:
 			print('Early stopped')
 			return True
-		self.comet.log_metric('Epochs without Improvements', self.no_improvements, epoch=epoch)
+		if self.comet is not None:
+			self.comet.log_metric('Epochs without Improvements', self.no_improvements, epoch=epoch)
 		return False
 
 	# <- prediction functions ->
