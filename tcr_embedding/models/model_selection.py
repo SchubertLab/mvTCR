@@ -71,7 +71,8 @@ def fail_save(func):
 
 
 @fail_save
-def objective(trial, adata, suggest_params, params_experiment_base, optimization_mode_params):
+def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimization_mode_params):
+    adata = adata_tmp.copy()
     params_experiment = params_experiment_base.copy()
     params_experiment = complete_params_experiment(params_experiment)
     params_experiment['save_path'] = os.path.join(params_experiment['save_path'], f'trial_{trial.number}')
