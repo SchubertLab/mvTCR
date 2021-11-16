@@ -301,9 +301,11 @@ class VAEBaseModel(ABC):
 					z = mu
 				z = self.model.get_latent_from_z(z)
 				z = sc.AnnData(z.detach().cpu().numpy())
-				z.obs[metadata] = np.array(metadata_batch).T
+				# z.obs[metadata] = np.array(metadata_batch).T
 				zs.append(z)
-		return sc.AnnData.concatenate(*zs)
+		latent = sc.AnnData.concatenate(*zs)
+		latent.obs[metadata] = adata.obs[metadata]
+		return latent
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):
 		data = initialize_latent_loader(adata_latent, self.batch_size, self.conditional)

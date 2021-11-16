@@ -17,21 +17,17 @@ def run_imputation_evaluation(data_full, embedding_function, query_source='val',
     :param label_pred: label of the collumn used for prediction
     :return: dictionary {metric: summary} containing the evaluation scores
     """
-    try:
-        data_atlas = data_full[data_full.obs['set'] == 'train']
-        data_query = data_full[data_full.obs['set'] == query_source]
+    data_atlas = data_full[data_full.obs['set'] == 'train']
+    data_query = data_full[data_full.obs['set'] == query_source]
 
-        assert len(data_query) > 0, 'Empty query set. Specifier are "val" or "test"'
+    assert len(data_query) > 0, 'Empty query set. Specifier are "val" or "test"'
 
-        embedding_atlas = embedding_function(data_atlas)
-        embedding_query = embedding_function(data_query)
+    embedding_atlas = embedding_function(data_atlas)
+    embedding_query = embedding_function(data_query)
 
-        scores = get_imputation_scores(embedding_atlas, embedding_query,
-                                       data_atlas.obs[label_pred], data_query.obs[label_pred],
-                                       num_neighbors=num_neighbors)
-    except ValueError as e:
-        print(e)
-        raise ValueError('Imputation failed')
+    scores = get_imputation_scores(embedding_atlas, embedding_query,
+                                   data_atlas.obs[label_pred], data_query.obs[label_pred],
+                                   num_neighbors=num_neighbors)
     return scores
 
 
