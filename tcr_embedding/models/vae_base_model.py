@@ -304,6 +304,7 @@ class VAEBaseModel(ABC):
 				# z.obs[metadata] = np.array(metadata_batch).T
 				zs.append(z)
 		latent = sc.AnnData.concatenate(*zs)
+		latent.obs.index = adata.obs.index
 		latent.obs[metadata] = adata.obs[metadata]
 		return latent
 

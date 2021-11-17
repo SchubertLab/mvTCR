@@ -11,14 +11,9 @@ def report_pseudo_metric(adata, model, optimization_mode_params, epoch, comet):
     """
     test_embedding_func = get_model_prediction_function(model, do_adata=True,
                                                         metadata=optimization_mode_params['prediction_labels'])
-    try:
-        summary = run_knn_within_set_evaluation(adata, test_embedding_func,
-                                                optimization_mode_params['prediction_labels'], subset='val')
-        summary['pseudo_metric'] = sum(summary.values())
-    except Exception as e:
-        print(e)
-        print('Error in kNN')
-        return
+    summary = run_knn_within_set_evaluation(adata, test_embedding_func,
+                                            optimization_mode_params['prediction_labels'], subset='val')
+    summary['pseudo_metric'] = sum(summary.values())
 
     if comet is not None:
         comet.log_metrics(summary, epoch=epoch)
