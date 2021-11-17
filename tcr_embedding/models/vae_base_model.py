@@ -175,6 +175,8 @@ class VAEBaseModel(ABC):
 		cls_acc_total = []
 
 		for rna, tcr, seq_len, _, labels, conditional in data:
+			if rna.shape[0] == 1 and phase == 'train':
+				continue  # BatchNorm cannot handle batches of size 1 during training phase
 			rna = rna.to(self.device)
 			tcr = tcr.to(self.device)
 
