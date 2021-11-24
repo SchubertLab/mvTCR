@@ -12,13 +12,15 @@ def run_clustering_evaluation(data_full, embedding_function, source_data='val', 
     Function for evaluating the embedding quality based upon imputation in the 10x dataset
     :param data_full: anndata object containing the full cell data (TCR + Genes) (train, val, test)
     :param embedding_function: function calculating the latent space for a single input
-    :param source_data: str 'val' or 'test' to choose between evaluation mode
+    :param source_data: list or str 'val' or 'test' to choose between evaluation mode
     :param name_label: column in data_full.obs used as ground truth for external cluster evaluation
     :param cluster_params: parameters for leiden clustering, None for default
     :return: dictionary {metric: summary} containing the evaluation scores
     """
     try:
-        if source_data == 'all':
+        if type(source_data) is list:
+            data_eval = data_full[data_full.obs['set'].isin(source_data)]
+        elif source_data == 'all':
             data_eval = data_full
         else:
             data_eval = data_full[data_full.obs['set'] == source_data]

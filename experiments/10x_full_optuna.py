@@ -16,7 +16,8 @@ import argparse
 import config.constants_10x as const
 
 
-utils.fix_seeds(42)
+random_seed = 42
+utils.fix_seeds(random_seed)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='poe')
@@ -31,7 +32,12 @@ if args.donor is not None:
     adata = adata[adata.obs['donor'] == f'donor_{args.donor}']
 if args.filter_non_binder:
     adata = adata[adata.obs['binding_name'].isin(const.HIGH_COUNT_ANTIGENS)]
-adata = adata[adata.obs['set'].isin(['train', 'val'])]
+
+
+train, val = stratified_group_shuffle_split(adata.obs, stratify_col='binding_name', group_col='clonotype',
+                                              val_split=0.2, random_seed=random_seed)
+adata.obs['set'] = 'train'
+adata.obs.loc[val.index, 'set'] = 'val'
 
 
 params_experiment = {

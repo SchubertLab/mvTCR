@@ -5,7 +5,6 @@ def get_model_prediction_function(model, do_adata=False, metadata=None):
     """
     Wrapper function for our embedding models
     :param model: trained pytorch model
-    :param batch_size: num of samples in forward pass
     :param do_adata: return the adata object (else numpy array)
     :param metadata: add these .obs from the original to the created anndata object
     :return: function for calculating the latent space of cells in an anndata object

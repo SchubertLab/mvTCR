@@ -11,9 +11,11 @@ def run_knn_within_set_evaluation(data_full, embedding_function, prediction_labe
     :param subset: str to choose the set for testing
     :return: dictionary {metric: summary} containing the evaluation scores
     """
+    if type(subset) == str:
+        subset = [subset]
     if type(prediction_labels) == str:
         prediction_labels = [prediction_labels]
-    data_test = data_full[data_full.obs['set'] == subset]
+    data_test = data_full[data_full.obs['set'].isin(subset)]
     latent_test = embedding_function(data_test)
     sc.pp.neighbors(latent_test, n_neighbors=2, knn=True)
     scores = {}
