@@ -9,7 +9,7 @@ sys.path.append('..')
 
 from tcr_embedding.models.model_selection import run_model_selection
 import tcr_embedding.utils_training as utils
-from tcr_embedding.utils_preprocessing import stratified_group_shuffle_split
+from tcr_embedding.utils_preprocessing import group_shuffle_split
 
 import os
 import argparse
@@ -36,28 +36,26 @@ if args.filter_non_binder:
 
 # subsample to get statistics
 random_seed = args.split
-sub, non_sub = stratified_group_shuffle_split(adata.obs, stratify_col='binding_name', group_col='clonotype',
-                                              val_split=0.2, random_seed=random_seed)
-train_val, test = stratified_group_shuffle_split(sub, stratify_col='binding_name', group_col='clonotype',
-                                                 val_split=0.20, random_seed=random_seed)
-_, val = stratified_group_shuffle_split(train_val, stratify_col='binding_name', group_col='clonotype',
-                                        val_split=0.25, random_seed=random_seed)
+train_val, test = group_shuffle_split(adata, group_col='clonotype', val_split=0.20, random_seed=random_seed)
+train, val = group_shuffle_split(train_val, group_col='clonotype', val_split=0.25, random_seed=random_seed)
+
 adata.obs['set'] = 'train'
-adata.obs.loc[non_sub.index, 'set'] = '-'
-adata.obs.loc[val.index, 'set'] = 'val'
-adata.obs.loc[test.index, 'set'] = 'test'
+adata.obs.loc[val.obs.index, 'set'] = 'val'
+adata.obs.loc[test.obs.index, 'set'] = 'test'
 adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
 params_experiment = {
     'study_name': f'10x_{args.donor}_{args.model}_filtered_{args.filter_non_binder}_split_{args.split}',
-    'comet_workspace': '10x',
+    'comet_workspace': None,
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['binding_name', 'clonotype', 'donor'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
                               f'10x_{args.donor}_{args.model}_split_{args.split}')
 }
+params_experiment['study_name'] = 'test'
+params_experiment['save_path'] = os.path.join(os.path.dirname(__file__), '..', 'optuna', 'test')
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
 

@@ -109,3 +109,21 @@ def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, rando
 	test = df[df[group_col].isin(all_test)]
 
 	return train, test
+
+
+def group_shuffle_split(adata_tmp, group_col, val_split, random_seed=42):
+	groups = adata_tmp.obs[group_col]
+	splitter = GroupShuffleSplit(test_size=val_split, n_splits=5, random_state=random_seed)
+
+	best_value = 1
+	train, val = None, None
+	for train_tmp, val_tmp in splitter.split(adata_tmp, groups=groups):
+		split_value = abs(len(val_tmp) / len(adata_tmp) - val_split)
+		if split_value < best_value:
+			train = train_tmp
+			val = val_tmp
+			best_value = split_value
+
+	train = adata_tmp[train]
+	val = adata_tmp[val]
+	return train, val
