@@ -19,7 +19,7 @@ def predict_pertubation(latent_train, latent_val, model, column_perturbation, in
     # todo delta per cell type?
     delta = get_delta(latent_train, column_perturbation, indicator_perturbation)
     adata_pred = sc.AnnData(latent_val.X + delta)
-    adata_pred = model.predict_transcriptome_from_latent(adata_pred)
+    adata_pred = model.predict_rna_from_latent(adata_pred)
     adata_pred.var_names = var_names
     return adata_pred
 

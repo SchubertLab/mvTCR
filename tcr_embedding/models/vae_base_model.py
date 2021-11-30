@@ -323,7 +323,7 @@ class VAEBaseModel(ABC):
 				else:
 					batch = batch[0].to(self.device)
 					conditional = None
-				batch_rna = model.predict_rna(batch, conditional)
+				batch_rna = model.predict_transcriptome(batch, conditional)
 				batch_rna = sc.AnnData(batch_rna.detach().cpu().numpy())
 				rnas.append(batch_rna)
 		rnas = sc.AnnData.concatenate(*rnas)
