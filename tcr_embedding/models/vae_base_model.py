@@ -290,7 +290,7 @@ class VAEBaseModel(ABC):
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
 			self.model.eval()
-			for rna, tcr, seq_len, metadata_batch, labels, conditional in data_embed:
+			for rna, tcr, seq_len, _, labels, conditional in data_embed:
 				rna = rna.to(self.device)
 				tcr = tcr.to(self.device)
 

@@ -54,8 +54,7 @@ params_experiment = {
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
                               f'10x_{args.donor}_{args.model}_split_{args.split}')
 }
-params_experiment['study_name'] = 'test'
-params_experiment['save_path'] = os.path.join(os.path.dirname(__file__), '..', 'optuna', 'test')
+
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
 

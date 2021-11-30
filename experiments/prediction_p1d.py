@@ -1,5 +1,5 @@
 """
-python -u covid_optuna.py --model poe --split 0
+python -u prediction_p1d.py --model poe --patient su007 --data bcc
 """
 # comet-ml must be imported before torch and sklearn
 import comet_ml
@@ -19,38 +19,42 @@ utils.fix_seeds(42)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='poe')
-parser.add_argument('--split', type=int, default=0)
+parser.add_argument('--patient', type=str, default=None)
+parser.add_argument('--data', type=str, default='bcc')
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
 
 
-adata = utils.load_data('covid')
+adata = utils.load_data(args.data)
+if args.patient is not None:
+    adata = adata[adata.obs['patient'] != args.patient]
 
-# subsample to get statistics
-random_seed = args.split
-sub, non_sub = group_shuffle_split(adata.obs, group_col='clonotype', val_split=0.2, random_seed=random_seed)
-train, val = group_shuffle_split(sub, group_col='clonotype', val_split=0.20, random_seed=random_seed)
+
+random_seed = 42
+train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.25, random_seed=random_seed)
 adata.obs['set'] = 'train'
-adata.obs.loc[non_sub.index, 'set'] = '-'
-adata.obs.loc[val.index, 'set'] = 'val'
-adata = adata[adata.obs['set'].isin(['train', 'val'])]
+adata.obs.loc[val.obs.index, 'set'] = 'val'
 
 
 params_experiment = {
-    'study_name': f'Covid_{args.model}_split_{args.split}',
-    'comet_workspace': None,  # 'Covid',
+    'study_name': f'scGen_{args.data}_{args.patient}_{args.model}',
+    'comet_workspace': 'bcc-scgen',
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
-    'metadata': ['identifier', 'cell_type', 'condition', 'responsive', 'reactive_combined'],
+    'metadata': ['patient', 'treatment', 'cluster', 'clonotype', 'response'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'Covid_{args.model}_split_{args.split}')
+                              f'scGen_{args.data}_{args.patient}_{args.model}')
 }
+
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
 
 params_optimization = {
-    'name': 'pseudo_metric',
-    'prediction_labels': ['clonotype', 'cell_type'],
+    'name': 'modulation_prediction',
+    'column_fold': 'patient',
+    'column_perturbation': 'treatment',
+    'indicator_perturbation': 'pre',
+    'column_cluster': 'cluster',
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
