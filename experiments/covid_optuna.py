@@ -28,11 +28,11 @@ adata = utils.load_data('covid')
 
 # subsample to get statistics
 random_seed = args.split
-sub, non_sub = group_shuffle_split(adata.obs, group_col='clonotype', val_split=0.2, random_seed=random_seed)
+sub, non_sub = group_shuffle_split(adata, group_col='clonotype', val_split=0.2, random_seed=random_seed)
 train, val = group_shuffle_split(sub, group_col='clonotype', val_split=0.20, random_seed=random_seed)
 adata.obs['set'] = 'train'
-adata.obs.loc[non_sub.index, 'set'] = '-'
-adata.obs.loc[val.index, 'set'] = 'val'
+adata.obs.loc[non_sub.obs.index, 'set'] = '-'
+adata.obs.loc[val.obs.index, 'set'] = 'val'
 adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
