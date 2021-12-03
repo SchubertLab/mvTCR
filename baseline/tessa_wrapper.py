@@ -4,8 +4,6 @@ Zhang Z, Xiong D, Wang X, Liu H, Wang T.
 Mapping the functional landscape of T cell receptor repertoires by single-T cell transcriptomics. Nat Methods. 2021.
 https://www.nature.com/articles/s41592-020-01020-3
 Clone the Github repository from https://github.com/jcao89757/TESSA to the folder 'baseline'.
-To reproduce create a new environment based on the file 'baseline/requirement_tessa.txt' todo
-Additionally, you must install the following R packages to the R distribution in your environment: todo
 """
 import os
 import shutil
@@ -79,12 +77,11 @@ def run_model_atlas_query(dataset, donor=None, split=0):
     Runs the evaluation of TESSA for the specified donor for a query and an atlas dataset
     :param donor: int, donor id
     :param dataset: str, folder name of the dataset (e.g. '10x')
+    :param split: int, tag indicating the data split
     :return: saves results and summary
     """
-    if donor is not None:
+    if donor != '':
         donor = f'{donor}/'
-    else:
-        donor = ''
 
     path_file = os.path.dirname(os.path.abspath(__file__))
     dir_in = path_file + f'/../data/tessa/{dataset}/{donor}{split}/'
@@ -115,7 +112,7 @@ def run_model_atlas_query(dataset, donor=None, split=0):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_env', type=str, default='')
-    parser.add_argument('--donor', type=str, default='test')
+    parser.add_argument('--donor', type=str, default='')
     parser.add_argument('--dataset', type=str, default='10x')
     parser.add_argument('--split', type=int, default=0)
     args = parser.parse_args()
@@ -123,7 +120,7 @@ if __name__ == '__main__':
     path_env_r = args.path_env
     donor_tag = args.donor
     dataset_name = args.dataset
-    split = args.split
+    split_tag = f'split_{args.split}'
 
     create_folders()
-    run_model_atlas_query(dataset_name, donor_tag, split)
+    run_model_atlas_query(dataset_name, donor_tag, split_tag)
