@@ -20,7 +20,7 @@ def create_folders():
     for p in paths:
         p = path_file + p
         if not os.path.exists(p):
-            os.mkdir(p)
+            os.makedirs(p, exist_ok=True)
 
 
 def run_tessa(dir_in, dir_out):
@@ -87,17 +87,9 @@ def run_model_atlas_query(dataset, donor=None, split=0):
     dir_in = path_file + f'/../data/tessa/{dataset}/{donor}{split}/'
     dir_out_atlas = path_file + f'/tmp/{dataset}/{donor}{split}/atlas'
     dir_out_query = path_file + f'/tmp/{dataset}/{donor}{split}/query'
-
-    if not os.path.exists(path_file + f'/tmp/{dataset}/'):
-        os.mkdir(path_file + f'/tmp/{dataset}/')
-    if not os.path.exists(path_file + f'/tmp/{dataset}/{donor}'):
-        os.mkdir(path_file + f'/tmp/{dataset}/{donor}')
-    if not os.path.exists(path_file + f'/tmp/{dataset}/{donor}{split}/'):
-        os.mkdir(path_file + f'/tmp/{dataset}/{donor}{split}/')
-    if not os.path.exists(dir_out_atlas):
-        os.mkdir(dir_out_atlas)
-    if not os.path.exists(dir_out_query):
-        os.mkdir(dir_out_query)
+    os.makedirs(dir_out_atlas, exist_ok=True)
+    os.makedirs(dir_out_query, exist_ok=True)
+    
     if os.path.exists(path_file + f'/tmp/{dataset}/{donor}{split}/atlas/res'):
         shutil.rmtree(path_file + f'/tmp/{dataset}/{donor}{split}/atlas/res')
     if os.path.exists(path_file + f'/tmp/{dataset}/{donor}{split}/query/res'):
