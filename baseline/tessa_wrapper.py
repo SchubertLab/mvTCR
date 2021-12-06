@@ -72,7 +72,7 @@ def run_briseis(dir_in, dir_out):
     os.system(command_ae)
 
 
-def run_model_atlas_query(dataset, donor=None, split=0):
+def run_model_atlas_query(dataset, donor=None, split='split_0'):
     """
     Runs the evaluation of TESSA for the specified donor for a query and an atlas dataset
     :param donor: int, donor id
@@ -89,7 +89,7 @@ def run_model_atlas_query(dataset, donor=None, split=0):
     dir_out_query = path_file + f'/tmp/{dataset}/{donor}{split}/query'
     os.makedirs(dir_out_atlas, exist_ok=True)
     os.makedirs(dir_out_query, exist_ok=True)
-    
+
     if os.path.exists(path_file + f'/tmp/{dataset}/{donor}{split}/atlas/res'):
         shutil.rmtree(path_file + f'/tmp/{dataset}/{donor}{split}/atlas/res')
     if os.path.exists(path_file + f'/tmp/{dataset}/{donor}{split}/query/res'):
