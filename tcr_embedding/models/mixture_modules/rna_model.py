@@ -92,10 +92,7 @@ class RnaModelTorch(nn.Module):
 			cond_emb_vec = self.cond_emb(conditional)
 			z_shared = torch.cat([z_shared, cond_emb_vec], dim=-1)  # shape=[batch_size, zdim+cond_dim]
 		z_shared = self.shared_decoder(z_shared)
-		if self.scRNA_model_arch != 'None' and self.seq_model_arch == 'None':
-			transcriptome_pred = self.gene_decoder(z_shared)
-		else:
-			raise ValueError('Trying to predict transcriptome with a model without rna')
+		transcriptome_pred = self.gene_decoder(z_shared)
 		return transcriptome_pred
 
 	def get_latent_from_z(self, z):

@@ -11,5 +11,6 @@ scrublet==0.2.3
 tqdm
 optuna
 umap-learn==0.5.1
+anndata2ri
 
 # torch==1.8.0 -f https://download.pytorch.org/whl/cu102/torch_stable.html
