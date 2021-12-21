@@ -4,7 +4,7 @@ This repo currently undergoes major refactoring. Please use "commit 3fabfae6ecb7
 cd to the cloned directory and execute the following
 
 ### Linux
-`conda create --name tcr python=3.8.8 -y && conda activate tcr && pip install -r requirements.txt && conda install nb_conda_kernels -y && conda install bottleneck -y`
+`conda create --name mvTCR python=3.8.8 -y && conda activate mvTCR && pip install -r requirements.txt && conda install nb_conda_kernels -y && conda install bottleneck -y`
 
 ### Windows
 Please uncomment torch from the requirements.txt, i.e. write a # before torch
