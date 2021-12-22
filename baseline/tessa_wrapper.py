@@ -32,12 +32,12 @@ def run_tessa(dir_in, dir_out):
     """
     path_file = os.path.dirname(os.path.abspath(__file__))
     settings_full = {
-        'tcr': f'{dir_in}/tcrs_atlas.csv',
+        'tcr': f'{dir_in}_tcrs_atlas.csv',
         'model': f'{path_file}/TESSA/BriseisEncoder/TrainedEncoder.h5',
         'embeding_vectors': f'{path_file}/TESSA/BriseisEncoder/Atchley_factors.csv',
         'output_TCR': f'{dir_out}/tessa_tcr_embedding.csv',
         'output_log': f'{dir_out}/tessa_log.log',
-        'exp': f'{dir_in}/scRNA_atlas.csv',
+        'exp': f'{dir_in}_scRNA_atlas.csv',
         'output_tessa': f'{dir_out}/res/',
         'within_sample_networks': 'FALSE',
 
@@ -59,7 +59,7 @@ def run_briseis(dir_in, dir_out):
     """
     path_file = os.path.dirname(os.path.abspath(__file__))
     settings_ae = {
-        'tcr': f'{dir_in}/tcrs_query.csv',
+        'tcr': f'{dir_in}_tcrs_query.csv',
         'model': f'{path_file}/TESSA/BriseisEncoder/TrainedEncoder.h5',
         'embeding_vectors': f'{path_file}/TESSA/BriseisEncoder/Atchley_factors.csv',
         'output_TCR': f'{dir_out}/tessa_tcr_embedding.csv',
@@ -84,7 +84,7 @@ def run_model_atlas_query(dataset, donor=None, split=0):
         donor = f'{donor}/'
 
     path_file = os.path.dirname(os.path.abspath(__file__))
-    dir_in = path_file + f'/../data/tessa/{dataset}/{donor}{split}/'
+    dir_in = path_file + f'/../data/tessa/{dataset}/{donor}{split}'
     dir_out_atlas = path_file + f'/tmp/{dataset}/{donor}{split}/atlas'
     dir_out_query = path_file + f'/tmp/{dataset}/{donor}{split}/query'
     os.makedirs(dir_out_atlas, exist_ok=True)
