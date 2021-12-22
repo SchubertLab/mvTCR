@@ -13,7 +13,9 @@ from tcr_embedding.utils_preprocessing import group_shuffle_split
 
 import os
 import argparse
+import scanpy as sc
 
+sc.settings.verbosity = 0
 
 utils.fix_seeds(42)
 
@@ -34,6 +36,7 @@ random_seed = 42
 train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.25, random_seed=random_seed)
 adata.obs['set'] = 'train'
 adata.obs.loc[val.obs.index, 'set'] = 'val'
+adata.obs['set'] = adata.obs['set'].astype('category')
 
 
 params_experiment = {
