@@ -99,7 +99,6 @@ class VAEBaseModel(ABC):
 			self.supervised_model = None  # todo
 
 		# datasets
-		self.max_seq_length = self.get_max_tcr_length()
 		if metadata is None:
 			metadata = []
 		if balanced_sampling is not None and balanced_sampling not in metadata:
@@ -419,14 +418,3 @@ class VAEBaseModel(ABC):
 		self._train_history = model_file['train_history']
 		self._val_history = model_file['val_history']
 		self.aa_to_id = model_file['aa_to_id']
-
-	def get_max_tcr_length(self):
-		"""
-		Determine the maximum amount of letters in the TCR sequence (TRA+TRB+codons)
-		:return: int value maximal sequence length
-		"""
-		max_length = -99
-		tcr_data = self.adata.obs['TRA+TRB']
-		current_max = tcr_data.str.len().max()
-		max_length = max(current_max, max_length)
-		return max_length
