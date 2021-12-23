@@ -48,13 +48,8 @@ for cat in adata.obs['Tissue+Type'].unique():
 
 for patients in holdout_patients.values():
     adata = adata[~adata.obs['Sample'].isin(patients)]
-print(len(adata))
-
 
 train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.2, random_seed=random_seed)
-print(len(train))
-print(len(val))
-raise ValueError
 adata.obs['set'] = 'train'
 adata.obs.loc[val.obs.index, 'set'] = 'val'
 
