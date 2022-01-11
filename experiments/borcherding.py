@@ -53,6 +53,7 @@ train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.2, ra
 adata.obs['set'] = 'train'
 adata.obs.loc[val.obs.index, 'set'] = 'val'
 
+print(len(adata))
 
 params_experiment = {
     'study_name': f'borcherding_moe_full',
@@ -65,7 +66,7 @@ params_experiment = {
 
 params_optimization = {
     'name': 'pseudo_metric',
-    'prediction_labels': ['clonotype']#'functional.cluster']
+    'prediction_labels': ['clonotype', 'functional.cluster']
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
