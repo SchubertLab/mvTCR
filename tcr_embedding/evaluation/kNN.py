@@ -20,8 +20,8 @@ def run_knn_within_set_evaluation(data_full, embedding_function, prediction_labe
     scores = {}
     for prediction_label in prediction_labels:
         latent_tmp = latent_test[~latent_test.obs[prediction_label].isnull()]
-        latent_tmp = latent_tmp[~latent_tmp.obs[prediction_label] != 'nan']
-        latent_tmp = latent_tmp[~latent_tmp.obs[prediction_label] != -99]
+        latent_tmp = latent_tmp[latent_tmp.obs[prediction_label] != 'nan']
+        latent_tmp = latent_tmp[latent_tmp.obs[prediction_label] != -99]
         sc.pp.neighbors(latent_tmp, n_neighbors=2, knn=True)
         scores[f'weighted_f1_{prediction_label}'] = Metrics.get_knn_f1_within_set(latent_tmp, prediction_label)
     return scores
