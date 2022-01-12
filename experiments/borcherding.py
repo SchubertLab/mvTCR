@@ -59,6 +59,7 @@ params_experiment = {
     'study_name': f'borcherding_moe_full',
     'comet_workspace': None,  # 'borcherding',
     'model_name': 'moe',
+    'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'functional.cluster'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', 'borcherding_moe')
