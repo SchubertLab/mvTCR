@@ -21,6 +21,7 @@ random_seed = 42
 utils.fix_seeds(random_seed)
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--rna_weight', type=int, default=1)
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
 
@@ -56,7 +57,7 @@ adata.obs.loc[val.obs.index, 'set'] = 'val'
 print(len(adata))
 
 params_experiment = {
-    'study_name': f'borcherding_moe_full',
+    'study_name': f'borcherding_moe_full_weight_{args.rna_weight}',
     'comet_workspace': None,  # 'borcherding',
     'model_name': 'moe',
     'early_stop': 5,
@@ -67,7 +68,9 @@ params_experiment = {
 
 params_optimization = {
     'name': 'pseudo_metric',
-    'prediction_labels': ['clonotype', 'functional.cluster']
+    'prediction_labels':
+        {'clonotype': 1,
+         'functional.cluster': args.rna_weight}
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
