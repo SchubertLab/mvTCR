@@ -63,7 +63,7 @@ params_experiment = {
     'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'functional.cluster'],
-    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', 'borcherding_moe')
+    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_moe_{args.rna_weight}')
 }
 
 params_optimization = {
