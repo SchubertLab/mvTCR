@@ -53,9 +53,12 @@ class VAEBaseModel(ABC):
 		self.params_rna = None
 		self.params_joint = params_architecture['joint']
 		self.params_supervised = None
+		self.beta_only = False
 
 		if 'tcr' in params_architecture:
 			self.params_tcr = params_architecture['tcr']
+			if 'beta_only' in self.params_tcr:
+				self.beta_only = self.params_tcr['beta_only']
 		if 'rna' in params_architecture:
 			self.params_rna = params_architecture['rna']
 		if 'supervised' in params_architecture:
@@ -104,7 +107,8 @@ class VAEBaseModel(ABC):
 		if balanced_sampling is not None and balanced_sampling not in metadata:
 			metadata.append(balanced_sampling)
 		self.data_train, self.data_val = initialize_data_loader(adata, metadata, conditional, label_key,
-																balanced_sampling, self.batch_size)
+																balanced_sampling, self.batch_size,
+																beta_only=self.beta_only)
 
 	def train(self,
 			  n_epochs=200,
@@ -283,7 +287,7 @@ class VAEBaseModel(ABC):
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
-		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size)
+		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only)
 
 		zs = []
 		with torch.no_grad():
@@ -332,7 +336,7 @@ class VAEBaseModel(ABC):
 
 	def predict_label(self, adata):
 		data, _ = initialize_data_loader(adata, None, self.conditional, self.label_key,
-										 None, self.batch_size)
+										 None, self.batch_size, beta_only=self.beta_only)
 		prediction_total = []
 		with torch.no_grad():
 			for rna, tcr, seq_len, metadata_batch, labels, conditional in data:

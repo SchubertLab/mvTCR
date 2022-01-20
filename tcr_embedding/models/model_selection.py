@@ -78,6 +78,10 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
     params_experiment['save_path'] = os.path.join(params_experiment['save_path'], f'trial_{trial.number}')
 
     params_architecture = suggest_params(trial)
+
+    if 'beta_only' in params_experiment and params_experiment['beta_only']:
+        params_architecture['tcr']['beta_only'] = True
+
     if 'rna_weight' in optimization_mode_params:
         rna_weight = optimization_mode_params['rna_weight']
         params_architecture['loss_weights'] = params_architecture['loss_weights'].append(rna_weight)

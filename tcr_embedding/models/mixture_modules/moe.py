@@ -11,6 +11,8 @@ from tcr_embedding.models.vae_base_model import VAEBaseModel
 class MoEModelTorch(nn.Module):
 	def __init__(self, tcr_params, rna_params, joint_params):
 		super(MoEModelTorch, self).__init__()
+		self.beta_only = 'beta_only' in tcr_params and tcr_params['beta_only']
+		self.amount_chains = 1 if self.beta_only else 2
 
 		xdim = rna_params['xdim']
 		hdim = joint_params['hdim']
@@ -25,10 +27,11 @@ class MoEModelTorch(nn.Module):
 
 		num_seq_labels = tcr_params['num_seq_labels']
 
-		self.alpha_encoder = TransformerEncoder(tcr_params, hdim // 2, num_seq_labels)
-		self.alpha_decoder = TransformerDecoder(tcr_params, hdim, num_seq_labels)
+		if not self.beta_only:
+			self.alpha_encoder = TransformerEncoder(tcr_params, hdim // 2, num_seq_labels)
+			self.alpha_decoder = TransformerDecoder(tcr_params, hdim, num_seq_labels)
 
-		self.beta_encoder = TransformerEncoder(tcr_params, hdim // 2, num_seq_labels)
+		self.beta_encoder = TransformerEncoder(tcr_params, hdim // self.amount_chains, num_seq_labels)
 		self.beta_decoder = TransformerDecoder(tcr_params, hdim, num_seq_labels)
 
 		self.rna_encoder = build_mlp_encoder(rna_params, xdim, hdim)
@@ -69,15 +72,19 @@ class MoEModelTorch(nn.Module):
 		if conditional is not None:
 			cond_emb_vec = self.cond_emb(conditional)
 		# Encode TCR
-		alpha_seq = tcr[:, :tcr.shape[1] // 2]
-		alpha_len = tcr_len[:, 0]
 
-		beta_seq = tcr[:, tcr.shape[1] // 2:]
-		beta_len = tcr_len[:, 1]
-
-		h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
+		beta_seq = tcr[:, tcr.shape[1] // 2 * (self.amount_chains == 2):]
+		beta_len = tcr_len[:, self.amount_chains-1]
 		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
-		h_tcr = torch.cat([h_alpha, h_beta], dim=-1)  # shape=[batch_size, hdim]
+
+		if not self.beta_only:
+			alpha_seq = tcr[:, :tcr.shape[1] // 2]
+			alpha_len = tcr_len[:, 0]
+			h_alpha = self.alpha_encoder(alpha_seq, alpha_len)  # shape=[batch_size, hdim//2]
+			h_tcr = torch.cat([h_alpha, h_beta], dim=-1)  # shape=[batch_size, hdim]
+		else:
+			h_tcr = torch.cat([h_beta], dim=-1)
+
 		if conditional is not None and self.cond_input:
 			h_tcr = torch.cat([h_tcr, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
 
@@ -111,11 +118,13 @@ class MoEModelTorch(nn.Module):
 			if conditional is not None:
 				z_ = torch.cat([z_, cond_emb_vec], dim=1)  # shape=[batch_size, hdim+n_cond]
 			f_tcr = self.tcr_vae_decoder(z_)
-			alpha_pred = self.alpha_decoder(f_tcr, alpha_seq)
 			beta_pred = self.beta_decoder(f_tcr, beta_seq)
 
-			tcr_pred.append(torch.cat([alpha_pred, beta_pred], dim=1))
-
+			if not self.beta_only:
+				alpha_pred = self.alpha_decoder(f_tcr, alpha_seq)
+				tcr_pred.append(torch.cat([alpha_pred, beta_pred], dim=1))
+			else:
+				tcr_pred.append(torch.cat([beta_pred], dim=1))
 		return z, mu, logvar, rna_pred, tcr_pred
 
 	def reparameterize(self, mu, log_var):
@@ -189,12 +198,15 @@ class MoEModel(VAEBaseModel):
 		rna_loss = self.loss_function_rna(rna_pred[0], rna) + self.loss_function_rna(rna_pred[1], rna)
 		rna_loss *= 0.5 * self.loss_weights[0]
 
-		# For GRU and Transformer, as they don't predict start token for alpha and beta chain, so -2
-		if tcr_pred[0].shape[1] == tcr.shape[1] - 2:
+		# For GRU and Transformer, as they don't predict start token for alpha and beta chain, so amount of chains used
+		if tcr_pred[0].shape[1] == tcr.shape[1] - self.model.amount_chains:
 			mask = torch.ones_like(tcr).bool()
-			mask[:, [0, mask.shape[1] // 2]] = False
-			tcr_loss = (self.loss_function_tcr(tcr_pred[0].flatten(end_dim=1), tcr[mask].flatten()) +
-						self.loss_function_tcr(tcr_pred[1].flatten(end_dim=1), tcr[mask].flatten()))
+			mask[:, [0]] = False
+			if not self.beta_only:
+				mask[:, [mask.shape[1] // 2]] = False
+			tcr_loss = self.loss_function_tcr(tcr_pred[0].flatten(end_dim=1), tcr[mask].flatten())
+			if not 'beta_only' in self.params_tcr or self.params_tcr['beta_only']:
+				tcr_loss += self.loss_function_tcr(tcr_pred[1].flatten(end_dim=1), tcr[mask].flatten())
 			tcr_loss *= 0.5 * self.loss_weights[1]
 		else:  # For CNN, as it predicts start token
 			tcr_loss = (self.loss_function_tcr(tcr_pred[0].flatten(end_dim=1), tcr.flatten()) +
