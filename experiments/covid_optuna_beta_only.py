@@ -1,5 +1,5 @@
 """
-python -u covid_optuna.py --model poe --split 0
+python -u covid_optuna_beta_only.py --split 0
 to compare our model to tessa, we will define a clonotype on base of its cdr3beta alone and train solely on CDR3b
 """
 # comet-ml must be imported before torch and sklearn
@@ -41,14 +41,12 @@ adata = adata[adata.obs['set'].isin(['train', 'val'])]
 params_experiment = {
     'study_name': f'Covid_moe_beta_split_{args.split}',
     'comet_workspace': None,  # 'Covid',
-    'model_name': args.model,
+    'model_name': 'moe',
     'balanced_sampling': 'clonotype',
     'metadata': ['identifier', 'cell_type', 'condition', 'responsive', 'reactive_combined'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
                               f'Covid_moe_beta_split_{args.split}')
 }
-if args.model == 'rna':
-    params_experiment['balanced_sampling'] = None
 
 params_optimization = {
     'name': 'pseudo_metric',
