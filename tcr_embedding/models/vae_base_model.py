@@ -330,6 +330,7 @@ class VAEBaseModel(ABC):
 				batch_rna = sc.AnnData(batch_rna.detach().cpu().numpy())
 				rnas.append(batch_rna)
 		rnas = sc.AnnData.concatenate(*rnas)
+		rnas.obs.index = adata_latent.obs.index
 		if metadata is not None:
 			rnas.obs[metadata] = adata_latent.obs[metadata]
 		return rnas

@@ -57,6 +57,6 @@ def evaluate_per_column(ground_truth, prediction, per_column, groups):
         if entry not in ground_truth.obs[per_column].unique() or entry not in prediction.obs[per_column].unique():
             continue
         sub_prediction = prediction[prediction.obs[per_column] == entry]
-        sub_ground_truth = prediction[prediction.obs[per_column] == entry]
+        sub_ground_truth = ground_truth[ground_truth.obs[per_column] == entry]
         sub_summary[entry] = Metrics.get_square_pearson(sub_ground_truth, sub_prediction)
     return sub_summary

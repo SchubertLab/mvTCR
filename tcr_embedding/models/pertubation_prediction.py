@@ -5,7 +5,8 @@ import scanpy as sc
 sc.settings.verbosity = 0
 
 
-def predict_pertubation(latent_train, latent_val, model, column_perturbation, indicator_perturbation, var_names):
+def predict_pertubation(latent_train, latent_val, model, column_perturbation, indicator_perturbation, var_names,
+                        return_latent=False, per_type=False):
     """
     Predict the effect of pertubation on transcriptome level
     :param latent_train: adata object containing the latent spaces of the training dataset
@@ -17,9 +18,21 @@ def predict_pertubation(latent_train, latent_val, model, column_perturbation, in
     :return: adata object, containing the predicted transcriptome profile after perturbation
     """
     # todo delta per cell type?
-    delta = get_delta(latent_train, column_perturbation, indicator_perturbation)
-    adata_pred = sc.AnnData(latent_val.X + delta)
-    adata_pred = model.predict_rna_from_latent(adata_pred)
+    if not per_type:
+        delta = get_delta(latent_train, column_perturbation, indicator_perturbation)
+        adata_pred = sc.AnnData(latent_val.X + delta, obs=latent_val.obs.copy())
+    else:
+        adatas_pred = []
+        for t in latent_train.obs[per_type].unique():
+            delta = get_delta(latent_train[latent_train.obs[per_type] == t],
+                              column_perturbation, indicator_perturbation)
+            adata_tmp = latent_val[latent_val.obs[per_type] == t].copy()
+            adata_new = sc.AnnData(adata_tmp.X + delta, obs=adata_tmp.obs)
+            adatas_pred.append(adata_new)
+        adata_pred = sc.concat(adatas_pred)
+    if return_latent:
+        return adata_pred
+    adata_pred = model.predict_rna_from_latent(adata_pred, metadata=adata_pred.obs.columns)
     adata_pred.var_names = var_names
     return adata_pred
 
@@ -61,9 +74,9 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
         latent_train = latent_full[mask_train]
         latent_val = latent_full[~mask_train]
 
-        if not 0 < sum(latent_train.obs[column_perturbation]==indicator_perturbation) < len(latent_train):
+        if not 0 < sum(latent_train.obs[column_perturbation] == indicator_perturbation) < len(latent_train):
             continue
-        if not 0 < sum(latent_val.obs[column_perturbation]==indicator_perturbation) < len(latent_val):
+        if not 0 < sum(latent_val.obs[column_perturbation] == indicator_perturbation) < len(latent_val):
             continue
 
         mask_val_pre = latent_val.obs[column_perturbation] == indicator_perturbation
