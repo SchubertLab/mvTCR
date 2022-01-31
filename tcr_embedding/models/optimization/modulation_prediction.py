@@ -6,7 +6,7 @@ def report_modulation_prediction(adata, model, optimization_mode_params, epoch, 
     summary = run_scgen_cross_validation(adata, optimization_mode_params['column_fold'],
                                          model, optimization_mode_params['column_perturbation'],
                                          optimization_mode_params['indicator_perturbation'],
-                                         optimization_mode_params['column_cluster'])
+                                         optimization_mode_params['gene_set'])
     score = summary['avg_r_squared']
     if comet is not None:
         for key, value in summary.items():

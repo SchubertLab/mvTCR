@@ -1,5 +1,5 @@
 """
-python -u yost_optuna_cell_type.py --model poe --cell_type CD4_T_cells --data bcc
+python -u yost_optuna_cell_type.py --model moe --cell_type CD4_T_cells --data bcc
 bcc ['CD4_T_cells', 'CD8_mem_T_cells', 'Tregs', 'CD8_act_T_cells', 'CD8_ex_T_cells', 'Tcell_prolif']
 scc ['Th17', 'CD8_naive', 'CD8_ex', 'Naive', 'CD8_mem', 'Treg', 'Tfh', 'CD8_act', 'CD8_eff', 'CD8_ex_act']
 """
@@ -22,7 +22,7 @@ sc.settings.verbosity = 0
 utils.fix_seeds(42)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, default='poe')
+parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--cell_type', type=str, default=None)
 parser.add_argument('--data', type=str, default='bcc')
 parser.add_argument('--gpus', type=int, default=1)
@@ -44,7 +44,7 @@ adata.obs['set'] = adata.obs['set'].astype('category')
 
 params_experiment = {
     'study_name': f'scGen_ct_{args.data}_{args.cell_type}_{args.model}',
-    'comet_workspace': 'bcc-scgen',
+    'comet_workspace': None,
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': [],
@@ -55,9 +55,16 @@ params_experiment = {
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
 
+sc.tl.rank_genes_groups(adata, 'cluster', n_genes=100, method='wilcoxon')
+degs = adata.uns['rank_genes_groups']['names']
+degs = [j for i in degs for j in i]
+
 params_optimization = {
-    'name': 'pseudo_metric',
-    'prediction_labels': ['clonotype', 'cluster']
+    'name': 'modulation_prediction',
+    'column_fold': 'cluster',
+    'column_perturbation': 'treatment',
+    'indicator_perturbation': 'pre',
+    'gene_set': degs,
 }
 
 timeout = (2 * 24 * 60 * 60) - 300

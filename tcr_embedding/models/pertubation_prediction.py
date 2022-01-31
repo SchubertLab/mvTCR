@@ -54,7 +54,7 @@ def get_delta(adata_latent, column_perturbation, indicator_perturbation):
     return delta
 
 
-def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, column_cluster):
+def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, degs):
     """
     Runs perturbation prediction over a specified fold column and evaluates the results
     :param adata: adata object, of the raw data
@@ -87,7 +87,7 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
                                             var_names=adata.var_names)
         score = evaluate_pertubation(adata[adata.obs[column_fold] == fold].copy(), pred_val_post, None,
                                      column_perturbation, indicator=indicator_perturbation,
-                                     column_cluster=column_cluster)
+                                     gene_set=degs)
         for key, value in score.items():
             summary_performance[f'{fold}_key'] = value
         if 'top_100_genes' in score:
