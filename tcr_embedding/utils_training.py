@@ -37,6 +37,8 @@ def load_data(source='10x'):
         path_source = 'Covid/04_covid_highly_var_5000.h5ad'
     elif source == 'haniffa':
         path_source = 'Haniffa/v3_conditional.h5ad'
+    elif source == 'haniffa_bcr':
+        path_source = 'Haniffa/02_bcrs_annoated.h5ad'
     elif source == 'borcherding_test':
         path_source = 'Borcherding/04_borch_annotated_test.h5ad'
     elif source == 'borcherding':

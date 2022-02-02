@@ -22,14 +22,14 @@ def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, 
 
 	if start_end_symbol:
 		adata.obs[read_col] = '<' + adata.obs[read_col].astype('str') + '>'
-		if type(pad) is int:
+		if type(pad) is not bool:
 			pad += 2
 
 	if length_col:
 		adata.obs[length_col] = adata.obs[read_col].str.len()
 
 	# Padding if specified
-	if type(pad) is int:
+	if type(pad) is not bool:
 		sequence_col = adata.obs[read_col].str.ljust(pad, '_')
 	elif pad:
 		pad_len = adata.obs[read_col].str.len().max()
