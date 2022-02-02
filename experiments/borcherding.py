@@ -22,6 +22,7 @@ utils.fix_seeds(random_seed)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--rna_weight', type=int, default=1)
+parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
 
@@ -59,7 +60,7 @@ print(len(adata))
 params_experiment = {
     'study_name': f'borcherding_moe_full_weight_{args.rna_weight}',
     'comet_workspace': None,  # 'borcherding',
-    'model_name': 'moe',
+    'model_name': args.model,
     'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'functional.cluster'],
