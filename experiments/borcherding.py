@@ -58,13 +58,13 @@ adata.obs.loc[val.obs.index, 'set'] = 'val'
 print(len(adata))
 
 params_experiment = {
-    'study_name': f'borcherding_moe_full_weight_{args.rna_weight}',
+    'study_name': f'borcherding_{args.model}_full_weight_{args.rna_weight}',
     'comet_workspace': None,  # 'borcherding',
     'model_name': args.model,
     'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'functional.cluster'],
-    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_moe_{args.rna_weight}')
+    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}')
 }
 
 params_optimization = {
