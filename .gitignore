@@ -15,3 +15,6 @@ optuna/
 config/API_key.txt
 
 **/baseline/
+manuscript/journal/results/
+manuscript/journal/figures/
+manuscript/journal/additional_data/
