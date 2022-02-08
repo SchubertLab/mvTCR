@@ -35,13 +35,13 @@ adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
 params_experiment = {
-    'study_name': f'haniffa_bcr_{args.model}',
+    'study_name': f'haniffa_bcr_{args.model}_{args.rna_weigth}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'celltype_B_v2'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'haniffa_bcr_{args.model}')
+                              f'haniffa_bcr_{args.model}_{args.rna_weigth}')
 }
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
