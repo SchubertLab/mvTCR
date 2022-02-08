@@ -18,6 +18,7 @@ import argparse
 utils.fix_seeds(42)
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--rna_weight', type=int, default=1)
 parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
@@ -47,7 +48,9 @@ if args.model == 'rna':
 
 params_optimization = {
     'name': 'pseudo_metric',
-    'prediction_labels': ['clonotype', 'celltype_B_v2'],
+    'prediction_labels':
+        {'clonotype': 1,
+         'celltype_B_v2': args.rna_weight}
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
