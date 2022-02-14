@@ -1,5 +1,7 @@
 """
-python -u prediction_p1d.py --model poe --patient su007 --data bcc
+python -u prediction_p1d.py --model poe --clonotype 5916 --data bcc
+
+top_10_clonotypes = [5916, 5933, 7675, 5910, 2117, 5912, 5977, 4746, 5909, 7660]
 """
 # comet-ml must be imported before torch and sklearn
 import comet_ml
@@ -21,15 +23,15 @@ utils.fix_seeds(42)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='poe')
-parser.add_argument('--patient', type=str, default=None)
+parser.add_argument('--clonotype', type=int, default=None)
 parser.add_argument('--data', type=str, default='bcc')
 parser.add_argument('--gpus', type=int, default=1)
 args = parser.parse_args()
 
 
 adata = utils.load_data(args.data)
-if args.patient is not None:
-    adata = adata[adata.obs['patient'] != args.patient]
+if args.clonotype is not None:
+    adata = adata[adata.obs['clonotype'] != args.clonotype]
 
 
 random_seed = 42
@@ -40,13 +42,13 @@ adata.obs['set'] = adata.obs['set'].astype('category')
 
 
 params_experiment = {
-    'study_name': f'scGen_{args.data}_{args.patient}_{args.model}',
+    'study_name': f'scGen_{args.data}_{args.clonotype}_{args.model}',
     'comet_workspace': 'bcc-scgen',
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['patient', 'treatment', 'cluster', 'clonotype', 'response'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'scGen_{args.data}_{args.patient}_{args.model}')
+                              f'scGen_{args.data}_{args.clonotype}_{args.model}')
 }
 
 if args.model == 'rna':
@@ -54,10 +56,9 @@ if args.model == 'rna':
 
 params_optimization = {
     'name': 'modulation_prediction',
-    'column_fold': 'patient',
+    'column_fold': 'clonotype',
     'column_perturbation': 'treatment',
     'indicator_perturbation': 'pre',
-    'column_cluster': 'cluster',
 }
 
 timeout = (2 * 24 * 60 * 60) - 300

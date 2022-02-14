@@ -1,12 +1,13 @@
 from tcr_embedding.evaluation.PertubationPrediction import evaluate_pertubation
 import numpy as np
 import scanpy as sc
+import time
 
 sc.settings.verbosity = 0
 
 
 def predict_pertubation(latent_train, latent_val, model, column_perturbation, indicator_perturbation, var_names,
-                        return_latent=False, per_type=False):
+                        return_latent=False, per_type=False, col_type=None):
     """
     Predict the effect of pertubation on transcriptome level
     :param latent_train: adata object containing the latent spaces of the training dataset
@@ -17,9 +18,26 @@ def predict_pertubation(latent_train, latent_val, model, column_perturbation, in
     :param var_names: list containing the gene names
     :return: adata object, containing the predicted transcriptome profile after perturbation
     """
-    # todo delta per cell type?
+    # todo delta per cell type? # upsampling?
     if not per_type:
         delta = get_delta(latent_train, column_perturbation, indicator_perturbation)
+        if col_type is None:
+            pass
+        else:
+            deltas = []
+
+            cats_pre = latent_train[latent_train.obs[column_perturbation] == indicator_perturbation].obs[
+                col_type].value_counts()
+            cats_pre = [cat for cat, count in cats_pre.items() if count > 10]
+            cats_post = latent_train[latent_train.obs[column_perturbation] != indicator_perturbation].obs[
+                col_type].value_counts()
+            cats_post = [cat for cat, count in cats_post.items() if count > 10]
+            cats_both = [cat for cat in cats_pre if cat in cats_post]
+
+            for t in cats_both:
+                d = get_delta(latent_train[latent_train.obs[col_type]==t], column_perturbation, indicator_perturbation)
+                deltas.append(d)
+            delta = np.vstack(deltas).mean(axis=0)
         adata_pred = sc.AnnData(latent_val.X + delta, obs=latent_val.obs.copy())
     else:
         adatas_pred = []
@@ -54,7 +72,7 @@ def get_delta(adata_latent, column_perturbation, indicator_perturbation):
     return delta
 
 
-def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, degs):
+def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation):
     """
     Runs perturbation prediction over a specified fold column and evaluates the results
     :param adata: adata object, of the raw data
@@ -62,37 +80,35 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
     :param model: model used for latent space generation
     :param column_perturbation: str, column in the adata object indicating the pertubation
     :param indicator_perturbation: str, value for the 'pre' state of the profile after perturbation
-    :param column_cluster: column indicating the clusters for which the top 100 DEG are determined
     :return: dict, summary over performance on the different splits and aggregation
     """
     latent_full = model.get_latent(adata, metadata=[column_fold, column_perturbation])
 
     summary_performance = {}
     rs_squared = []
-    for fold in adata.obs[column_fold].unique():
+
+    cats_pre = adata[adata.obs[column_perturbation] == indicator_perturbation].obs[column_fold].value_counts()
+    cats_pre = [cat for cat, count in cats_pre.items() if count > 10]
+    cats_post = adata[adata.obs[column_perturbation] != indicator_perturbation].obs[column_fold].value_counts()
+    cats_post = [cat for cat, count in cats_post.items() if count > 10]
+    cats_both = [cat for cat in cats_pre if cat in cats_post]
+
+    for fold in cats_both:
         mask_train = latent_full.obs[column_fold] != fold
         latent_train = latent_full[mask_train]
         latent_val = latent_full[~mask_train]
 
-        if not 0 < sum(latent_train.obs[column_perturbation] == indicator_perturbation) < len(latent_train):
-            continue
-        if not 0 < sum(latent_val.obs[column_perturbation] == indicator_perturbation) < len(latent_val):
-            continue
-
-        mask_val_pre = latent_val.obs[column_perturbation] == indicator_perturbation
-        latent_val_pre = latent_val[mask_val_pre]
-
+        latent_val_pre = latent_val[latent_val.obs[column_perturbation] == indicator_perturbation]
         pred_val_post = predict_pertubation(latent_train, latent_val_pre, model,
                                             column_perturbation, indicator_perturbation,
-                                            var_names=adata.var_names)
+                                            var_names=adata.var_names, col_type=column_fold)
+
         score = evaluate_pertubation(adata[adata.obs[column_fold] == fold].copy(), pred_val_post, None,
-                                     column_perturbation, indicator=indicator_perturbation,
-                                     gene_set=degs)
+                                     column_perturbation, indicator=indicator_perturbation)
+
         for key, value in score.items():
             summary_performance[f'{fold}_key'] = value
-        if 'top_100_genes' in score:
-            rs_squared.append(score['top_100_genes']['r_squared'])
-        else:
-            rs_squared.append(score['all_genes']['r_squared'])
+        rs_squared.append(score['all_genes']['r_squared'])
+
     summary_performance['avg_r_squared'] = sum(rs_squared) / len(rs_squared)
     return summary_performance
