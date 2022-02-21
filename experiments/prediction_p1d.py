@@ -33,7 +33,6 @@ adata = utils.load_data(args.data)
 if args.clonotype is not None:
     adata = adata[adata.obs['clonotype'] != args.clonotype]
 
-
 random_seed = 42
 train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.25, random_seed=random_seed)
 adata.obs['set'] = 'train'
@@ -42,13 +41,13 @@ adata.obs['set'] = adata.obs['set'].astype('category')
 
 
 params_experiment = {
-    'study_name': f'scGen_{args.data}_{args.clonotype}_{args.model}',
-    'comet_workspace': 'bcc-scgen',
+    'study_name': f'scGen_rev_{args.data}_{args.clonotype}_{args.model}',
+    'comet_workspace': None,
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['patient', 'treatment', 'cluster', 'clonotype', 'response'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'scGen_{args.data}_{args.clonotype}_{args.model}')
+                              f'scGen_rev_{args.data}_{args.clonotype}_{args.model}')
 }
 
 if args.model == 'rna':
