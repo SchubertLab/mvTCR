@@ -43,6 +43,8 @@ def load_data(source='10x'):
         path_source = 'Borcherding/04_borch_annotated_test.h5ad'
     elif source == 'borcherding':
         path_source = 'Borcherding/04_borch_annotated.h5ad'
+    elif source == 'bcells_covid':
+        path_source = 'Bcells_Covid/02_bcrs_annoated.h5ad'
     else:
         path_source = source
     path_file = os.path.join(path_base, path_source)

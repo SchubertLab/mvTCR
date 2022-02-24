@@ -25,7 +25,8 @@ def predict_pertubation(latent_train, latent_val, model, column_perturbation, in
     cts_post = latent_train[latent_train.obs[column_perturbation] != indicator_perturbation].obs[col_type].unique()
     cts_both = [ct for ct in cts_pre if ct in cts_post]
 
-    centers = latent_train[latent_train.obs[col_type].isin(cts_both)]
+    centers = latent_train[latent_train.obs[col_type].isin(cts_both) &
+                           (latent_train.obs[column_perturbation] == indicator_perturbation)]
     centers = [centers[centers.obs[col_type] == ct_group].X.mean(axis=0) for ct_group in cts_both]
 
     center_pre = latent_val.X.mean(axis=0)
@@ -35,7 +36,7 @@ def predict_pertubation(latent_train, latent_val, model, column_perturbation, in
     idx = idx[0][0]
 
     center_post = latent_train[(latent_train.obs[col_type] == cts_both[idx]) &
-                               (latent_train.obs[column_perturbation] == indicator_perturbation)].X.mean(axis=0)
+                               (latent_train.obs[column_perturbation] != indicator_perturbation)].X.mean(axis=0)
     delta = center_post - centers[idx]
 
     ad_pred = sc.AnnData(latent_val_pre.X + delta, obs=latent_val.obs.copy())
