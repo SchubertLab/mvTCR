@@ -15,7 +15,6 @@ import os
 import argparse
 
 
-
 utils.fix_seeds(42)
 
 parser = argparse.ArgumentParser()
@@ -26,7 +25,7 @@ args = parser.parse_args()
 
 
 adata = utils.load_data('Bcells_covid')
-
+adata = adata[adata.obs['Specificity'] != 'Probe_Negative']
 
 # subsample to get statistics
 random_seed = args.split
