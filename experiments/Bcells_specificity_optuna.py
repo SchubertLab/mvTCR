@@ -10,7 +10,7 @@ sys.path.append('..')
 from tcr_embedding.models.model_selection import run_model_selection
 import tcr_embedding.utils_training as utils
 
-from sklearn.model_selection import train_test_split
+from tcr_embedding.utils_preprocessing import group_shuffle_split
 import os
 import argparse
 
@@ -29,31 +29,22 @@ adata = adata[adata.obs['Specificity'] != 'Probe_Negative']
 
 # subsample to get statistics
 random_seed = args.split
+train_val, test = group_shuffle_split(adata, group_col='clonotype', val_split=0.20, random_seed=random_seed)
+train, val = group_shuffle_split(train_val, group_col='clonotype', val_split=0.25, random_seed=random_seed)
 
-samples = adata.obs['sample'].unique()
-trainval, test = train_test_split(samples, test_size=0.20, random_state=random_seed)
-train, val = train_test_split(trainval, test_size=0.25, random_state=random_seed)
-
-
-def assign_set(x):
-    if x in test:
-        return 'test'
-    if x in val:
-        return 'val'
-    return 'train'
-
-
-adata.obs['set'] = adata.obs['sample'].apply(lambda x: assign_set(x))
+adata.obs['set'] = 'train'
+adata.obs.loc[val.obs.index, 'set'] = 'val'
+adata.obs.loc[test.obs.index, 'set'] = 'test'
 adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 params_experiment = {
-    'study_name': f'Bcells_covid_spec_{args.model}_split_{args.split}',
+    'study_name': f'Bcells_covid_spec_wi_{args.model}_split_{args.split}',
     'comet_workspace': None,
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['Specificity', 'clonotype'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'Bcells_covid_spec_{args.model}_split_{args.split}')
+                              f'Bcells_covid_spec_wi_{args.model}_split_{args.split}')
 }
 
 if args.model == 'rna':
