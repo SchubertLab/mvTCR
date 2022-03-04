@@ -105,8 +105,9 @@ def calculate_sampling_weights(adata, train_mask, class_column):
 
 
 # <- data loader for prediction ->
-def initialize_prediction_loader(adata, metadata, batch_size, beta_only=False):
-    prediction_dataset, _, _ = create_datasets(adata, val_split=None, metadata=metadata, beta_only=beta_only)
+def initialize_prediction_loader(adata, metadata, batch_size, beta_only=False, conditional=None):
+    prediction_dataset, _, _ = create_datasets(adata, val_split=None, conditional=conditional,
+                                               metadata=metadata, beta_only=beta_only)
     prediction_loader = DataLoader(prediction_dataset, batch_size=batch_size, shuffle=False)
     return prediction_loader
 

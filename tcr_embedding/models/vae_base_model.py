@@ -169,7 +169,6 @@ class VAEBaseModel(ABC):
 			data = self.data_train
 		else:
 			data = self.data_val
-
 		loss_total = []
 		rna_loss_total = []
 		tcr_loss_total = []
@@ -287,7 +286,8 @@ class VAEBaseModel(ABC):
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
-		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only)
+		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
+												  conditional=self.conditional)
 
 		zs = []
 		with torch.no_grad():
