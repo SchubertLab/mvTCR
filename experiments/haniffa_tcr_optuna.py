@@ -26,8 +26,6 @@ args = parser.parse_args()
 
 adata = utils.load_data('haniffa')
 
-adata = adata[:1000, :]
-
 # subsample to get statistics
 random_seed = 42
 train, val = group_shuffle_split(adata, group_col='clonotype', val_split=0.20, random_seed=random_seed)
