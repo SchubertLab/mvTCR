@@ -26,7 +26,7 @@ class JointDataset(torch.utils.data.Dataset):
 
 		if conditional is not None:
 			# Reduce the one-hot-encoding back to labels
-			self.conditional = torch.LongTensor(self.conditional.argmax(1))
+			self.conditional = torch.LongTensor(conditional.argmax(1))
 		# LongTensor since it is going to be embedded
 		else:
 			self.conditional = None
@@ -57,14 +57,14 @@ class JointDataset(torch.utils.data.Dataset):
 				return self.rna_data[idx], self.tcr_data[idx], self.tcr_length[idx], \
 					   self.metadata[idx], False, False
 			else:
-				return self.rna_data[idx], self.tcr_data[idx], self.tcr_len[idx], \
+				return self.rna_data[idx], self.tcr_data[idx], self.tcr_length[idx], \
 					   self.metadata[idx], False, self.conditional[idx]
 		else:
 			if self.conditional is None:
-				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_len[idx], \
+				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_lenght[idx], \
 					   self.metadata[idx], self.labels[idx], False
 			else:
-				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_len[idx], \
+				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_lenght[idx], \
 					   self.metadata[idx], self.labels[idx], self.conditional[idx]
 
 

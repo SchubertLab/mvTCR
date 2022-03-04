@@ -25,8 +25,8 @@ args = parser.parse_args()
 
 
 adata = utils.load_data('Bcells_covid')
-adata = adata[adata.obs['Specificity'] != 'Probe_Negative']
-adata = adata[adata.obs['Specificity'] != 'Probe_Poly']
+
+adata.obs['Reactivity'] = (adata.obs['Specificity'] != 'Probe_Negative').astype(str)
 
 # subsample to get statistics
 random_seed = args.split
@@ -39,13 +39,13 @@ adata.obs.loc[test.obs.index, 'set'] = 'test'
 adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 params_experiment = {
-    'study_name': f'Bcells_spec_wi_noPoly_{args.model}_split_{args.split}',
+    'study_name': f'Bcells_covid_reac_wi_{args.model}_split_{args.split}',
     'comet_workspace': None,
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['Specificity', 'clonotype'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'Bcells_spec_wi_noPoly_{args.model}_split_{args.split}')
+                              f'Bcells_covid_reac_wi_{args.model}_split_{args.split}')
 }
 
 if args.model == 'rna':
@@ -53,7 +53,7 @@ if args.model == 'rna':
 
 params_optimization = {
     'name': 'knn_prediction',
-    'prediction_column': 'Specificity',
+    'prediction_column': 'Reactivity',
 }
 
 timeout = (2 * 24 * 60 * 60) - 300
