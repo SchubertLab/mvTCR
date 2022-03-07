@@ -27,18 +27,15 @@ def evaluate_pertubation(data_val, prediction, per_column, pertubation, indicato
     if gene_set is None:
         return summary
 
-    #top_100_genes = data_val.uns['rank_genes_groups']['names']
-    #top_100_genes = [gene for group in top_100_genes for gene in group]
     ground_truth = ground_truth[:, gene_set]
     prediction = prediction[:, gene_set]
 
     # evaluate over top 100 genes per cell type
-    summary['top_100_genes'] = Metrics.get_square_pearson(ground_truth, prediction)
-
+    summary['degs'] = Metrics.get_square_pearson(ground_truth, prediction)
     # evaluate by column
     if per_column is not None:
         groups = data_val.obs[per_column].unique()
-        summary[f'per_{per_column}_top_100'] = evaluate_per_column(ground_truth, prediction, per_column, groups)
+        summary[f'per_{per_column}_degs'] = evaluate_per_column(ground_truth, prediction, per_column, groups)
     return summary
 
 

@@ -65,7 +65,7 @@ def get_delta(adata_latent, column_perturbation, indicator_perturbation):
     return delta
 
 
-def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation):
+def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, indicator_perturbation, degs=None):
     """
     Runs perturbation prediction over a specified fold column and evaluates the results
     :param adata: adata object, of the raw data
@@ -103,7 +103,6 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
         centers_post_tmp.pop(i)
 
         mask_train = latent_full.obs[column_fold] != fold
-        latent_train = latent_full[mask_train]
         latent_val = latent_full[~mask_train]
         latent_val_pre = latent_val[latent_val.obs[column_perturbation] == indicator_perturbation]
 
@@ -119,18 +118,15 @@ def run_scgen_cross_validation(adata, column_fold, model, column_perturbation, i
         ad_pred.var_names = adata.var_names
 
         data_ct = adata[adata.obs[column_fold] == fold].copy()
-        sc.tl.rank_genes_groups(data_ct, column_perturbation, n_genes=50, method='wilcoxon')
-        degs = data_ct.uns['rank_genes_groups']['names']
-
         score = evaluate_pertubation(data_ct.copy(), ad_pred, column_fold, column_perturbation,
                                      indicator=indicator_perturbation, gene_set=degs)
 
         for key, value in score.items():
             summary_performance[f'{fold}_key'] = value
-        rs_squared.append(score['top_100_genes']['r_squared'])
+        rs_squared.append(score['degs']['r_squared'])
 
     summary_performance['avg_r_squared'] = sum(rs_squared) / len(rs_squared)
     toc = time.time()
-    print(summary_performance['avg_r_squared'])
-    print(toc - tic)
+    #print(summary_performance['avg_r_squared'])
+    #print(toc - tic)
     return summary_performance
