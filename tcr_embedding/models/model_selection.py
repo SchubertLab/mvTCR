@@ -70,7 +70,7 @@ def fail_save(func):
     return wrapper
 
 
-@fail_save
+#@fail_save
 def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimization_mode_params):
     adata = adata_tmp.copy()
     params_experiment = params_experiment_base.copy()

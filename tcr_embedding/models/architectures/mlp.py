@@ -5,6 +5,7 @@ Date: 17th March 2021
 Availability: https://github.com/theislab/multigrate
 """
 from torch import nn
+import torch
 
 
 class MLP(nn.Module):
@@ -55,6 +56,8 @@ class MLP(nn.Module):
             return nn.Sigmoid()
         elif name == 'softmax':
             return nn.Softmax()
+        elif name == 'exponential':
+            return Exponential()
         else:
             raise NotImplementedError(f'activation function {name} is not implemented.')
 
@@ -67,3 +70,12 @@ class MLP(nn.Module):
             x = layer(x)
             outputs.append(x)
         return outputs
+
+
+class Exponential(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.exp(x)
+        return x

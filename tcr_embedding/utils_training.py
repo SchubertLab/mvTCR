@@ -28,7 +28,7 @@ def load_data(source='10x'):
 
     source = source.lower()
     if source == '10x':
-        path_source = '10x_CD8TC/v6_supervised.h5ad'
+        path_source = '10x_CD8TC/v7_avidity.h5ad'
     elif source == 'bcc':
         path_source = 'BCC/06_bcc_highly_var_5000.h5ad'
     elif source == 'scc':
