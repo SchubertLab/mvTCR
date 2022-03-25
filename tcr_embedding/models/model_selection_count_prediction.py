@@ -96,7 +96,7 @@ def objective(trial, data, params_experiment):
         dirpath=path_save,
         filename='best_model',
         save_top_k=1,
-        verbose=True,
+        verbose=False,
         monitor='val_loss',
         mode='min'
     )
