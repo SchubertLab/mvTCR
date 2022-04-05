@@ -21,10 +21,21 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--rna_weight', type=int, default=1)
 parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
+parser.add_argument('--wo_tcr_genes', type=bool, default=False)
+parser.add_argument('--conditional', type=str, default='patient_id')
+
 args = parser.parse_args()
 
 
 adata = utils.load_data('haniffa')
+
+if args.wo_tcr_genes:
+    tcr_gene_prefixs = ['TRAV', 'TRAJ', 'TRAC', 'TRB', 'TRDV', 'TRDC', 'TRG']
+    non_tcr_genes = adata.var_names
+    for prefix in tcr_gene_prefixs:
+        non_tcr_genes = [el for el in non_tcr_genes if not el.startswith(prefix)]
+    adata = adata[:, non_tcr_genes]
+
 
 # subsample to get statistics
 random_seed = 42
@@ -35,14 +46,14 @@ adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
 params_experiment = {
-    'study_name': f'haniffa_tcr_{args.model}_{args.rna_weight}',
+    'study_name': f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'full_clustering'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'haniffa_tcr_{args.model}_{args.rna_weight}'),
-    'conditional': 'patient_id'
+                              f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
+    'conditional': args.conditional
 }
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
