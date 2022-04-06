@@ -16,6 +16,7 @@ from tcr_embedding.models.losses.msle import MSLE
 class DecisionHead(pl.LightningModule,):
     def __init__(self, params_model, n_in, n_out):
         super().__init__()
+        self.save_hyperparameters()
         self.params_model = params_model
         self.network = build_mlp(params_model['mlp'], n_in, n_out).float()
 
