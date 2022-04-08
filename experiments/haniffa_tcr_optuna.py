@@ -29,7 +29,7 @@ args = parser.parse_args()
 
 adata = utils.load_data('haniffa')
 
-if args.wo_tcr_genes:
+if args.wo_tcr_genes == 'True':
     tcr_gene_prefixs = ['TRAV', 'TRAJ', 'TRAC', 'TRB', 'TRDV', 'TRDC', 'TRG']
     non_tcr_genes = adata.var_names
     for prefix in tcr_gene_prefixs:
