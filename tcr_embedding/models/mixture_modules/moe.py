@@ -1,11 +1,13 @@
 # A Variational Information Bottleneck Approach to Multi-Omics Data Integration
 import torch
 import torch.nn as nn
+import scanpy as sc
 
 from tcr_embedding.models.architectures.transformer import TransformerEncoder, TransformerDecoder
 from tcr_embedding.models.architectures.mlp import MLP
 from tcr_embedding.models.architectures.mlp_scRNA import build_mlp_encoder, build_mlp_decoder
 from tcr_embedding.models.vae_base_model import VAEBaseModel
+from tcr_embedding.dataloader.DataLoader import initialize_prediction_loader
 
 
 class MoEModelTorch(nn.Module):
@@ -219,3 +221,40 @@ class MoEModel(VAEBaseModel):
 		kld_loss *= 0.5 * self.loss_weights[2] * self.get_kl_annealing_factor(epoch)
 		z = 0.5 * (mu[0] + mu[1])
 		return kld_loss, z
+
+	def get_latent_unimodal(self, adata, metadata, modality, return_mean=True):
+		"""
+		Get unimodal latent either from RNA or TCR only
+		:param adata:
+		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
+		:param return_mean: bool, calculate latent space without sampling
+		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
+		"""
+		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only)
+
+		zs = []
+		with torch.no_grad():
+			self.model = self.model.to(self.device)
+			self.model.eval()
+			for rna, tcr, seq_len, _, labels, conditional in data_embed:
+				rna = rna.to(self.device)
+				tcr = tcr.to(self.device)
+
+				if self.conditional is not None:
+					conditional = conditional.to(self.device)
+				else:
+					conditional = None
+				z, mu, _, _, _ = self.model(rna, tcr, seq_len, conditional)
+				if return_mean:
+					z = mu
+				if modality == 'RNA':
+					z = z[0]
+				else:
+					z = z[1]
+				z = sc.AnnData(z.detach().cpu().numpy())
+				# z.obs[metadata] = np.array(metadata_batch).T
+				zs.append(z)
+		latent = sc.AnnData.concatenate(*zs)
+		latent.obs.index = adata.obs.index
+		latent.obs[metadata] = adata.obs[metadata]
+		return latent
