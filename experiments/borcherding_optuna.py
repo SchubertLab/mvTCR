@@ -66,6 +66,7 @@ params_experiment = {
     'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
+    'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'Tissue+Type', 'functional.cluster'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
