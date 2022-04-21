@@ -126,6 +126,8 @@ def run_model_selection(adata, params_experiment, params_optimization, num_sampl
     storage = f'sqlite:///{params_experiment["save_path"]}.db'
     if os.path.exists(params_experiment['save_path'] + '.db'):
         os.remove(params_experiment['save_path'] + '.db')
+    os.makedirs(os.path.dirname(params_experiment['save_path']), exist_ok=True)
+
     study = optuna.create_study(study_name=params_experiment['study_name'], sampler=sampler, storage=storage,
                                 direction=direction, load_if_exists=False)
 
