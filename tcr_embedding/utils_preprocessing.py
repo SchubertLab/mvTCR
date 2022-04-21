@@ -3,6 +3,25 @@ from tqdm import tqdm
 from sklearn.model_selection import GroupShuffleSplit
 
 
+def encode_tcr(adata, column_cdr3a, column_cdr3b, pad):
+	"""
+	Encodes the CDR3 alpha and CDR3 beta chain into numerical values
+	:param adata: adata object
+	:param column_cdr3a: column in adata.obs storing the cdr3alpha chain
+	:param column_cdr3b: column in adata.obs storing the cdr3beta chain
+	:param pad: int, amount of position to pad the sequence to
+	:return: stores the numeric embedding to adata.obsm['alpha_seq'] and adata.obsm['beta_seq']
+	"""
+	aa_to_id = {'_': 0, 'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'K': 9, 'L': 10, 'M': 11,
+				'N': 12, 'P': 13, 'Q': 14, 'R': 15, 'S': 16, 'T': 17, 'V': 18, 'W': 19, 'Y': 20, '+': 21,
+				'<': 22, '>': 23}
+	adata.uns['aa_to_id'] = aa_to_id
+	aa_encoding(adata, read_col=column_cdr3b, label_col='beta_seq', length_col='beta_len', pad=pad, aa_to_id=aa_to_id,
+				start_end_symbol=False)
+	aa_encoding(adata, read_col=column_cdr3a, label_col='alpha_seq', length_col='alpha_len', pad=pad, aa_to_id=aa_to_id,
+				start_end_symbol=False)
+
+
 def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
 	"""
 	Encoding of protein or nucleotide sequence inplace, either one-hot-encoded or as index labels and/or one-hot-encoding
