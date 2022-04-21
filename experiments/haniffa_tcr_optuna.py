@@ -23,6 +23,7 @@ parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
 parser.add_argument('--wo_tcr_genes', type=bool, default=False)
 parser.add_argument('--conditional', type=str, default='patient_id')
+parser.add_argument('--site', type=str, default=None)
 
 args = parser.parse_args()
 
@@ -36,6 +37,8 @@ if args.wo_tcr_genes == 'True':
         non_tcr_genes = [el for el in non_tcr_genes if not el.startswith(prefix)]
     adata = adata[:, non_tcr_genes]
 
+if args.site is not None:
+    adata = adata[adata.obs['Site'] == args.site]
 
 # subsample to get statistics
 random_seed = 42
