@@ -39,13 +39,15 @@ def complete_params_experiment(params):
     default_values = {
         'device': None,
         'balanced_sampling': None,
-        'metadata': None,
+        'metadata': [],
         'conditional': None,
         'label_key': None,
         'n_epochs': 200,
         'kl_annealing_epochs': None,
         'early_stop': None,
-        'save_path': '../saved_models/'
+        'save_path': '../saved_models/',
+        'model_name': 'moe',
+        'early_stopping': 5,
     }
     for key, value in default_values.items():
         if key not in params:
