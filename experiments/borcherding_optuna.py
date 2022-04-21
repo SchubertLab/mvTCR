@@ -23,20 +23,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--rna_weight', type=int, default=1)
 parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
-parser.add_argument('--wo_tcr_genes', action='store_true')
+parser.add_argument('--wo_tcr_genes', type=str, default='False')
 parser.add_argument('--conditional', type=str, default=None)
 
 args = parser.parse_args()
 
-
 adata = utils.load_data('borcherding')
-
-if args.wo_tcr_genes:
-    tcr_gene_prefixs = ['TRAV', 'TRAJ', 'TRAC', 'TRB', 'TRDV', 'TRDC', 'TRG']
-    non_tcr_genes = adata.var_names
-    for prefix in tcr_gene_prefixs:
-        non_tcr_genes = [el for el in non_tcr_genes if not el.startswith(prefix)]
-    adata = adata[:, non_tcr_genes]
 
 # Randomly select patients to be left out during training
 def get_n_patients(amount_patients):
@@ -63,11 +55,18 @@ adata.obs['set'] = 'train'
 adata.obs.loc[val.obs.index, 'set'] = 'val'
 adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
+if args.wo_tcr_genes == 'True':
+    tcr_gene_prefixs = ['TRAV', 'TRAJ', 'TRAC', 'TRB', 'TRDV', 'TRDC', 'TRG']
+    non_tcr_genes = adata.var_names
+    for prefix in tcr_gene_prefixs:
+        non_tcr_genes = [el for el in non_tcr_genes if not el.startswith(prefix)]
+    adata = adata[:, non_tcr_genes]
 
 params_experiment = {
     'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
+    'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'Tissue+Type', 'functional.cluster'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
