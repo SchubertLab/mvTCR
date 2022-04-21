@@ -88,6 +88,11 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
         rna_weight = optimization_mode_params['rna_weight']
         params_architecture['loss_weights'] = params_architecture['loss_weights'].append(rna_weight)
 
+    if 'use_embedding_for_cond' in params_experiment:
+        params_architecture['joint']['use_embedding_for_cond'] = params_experiment['use_embedding_for_cond']
+    # if 'cond_input' in params_experiment:
+    #     params_architecture['joint']['cond_input'] = params_experiment['cond_input']
+
     comet = utils.initialize_comet(params_architecture, params_experiment)
 
     model = utils.select_model_by_name(params_experiment['model_name'])
