@@ -26,6 +26,7 @@ class MoEModelTorch(nn.Module):
 		activation = joint_params['activation']
 		dropout = joint_params['dropout']
 		batch_norm = joint_params['batch_norm']
+		use_embedding_for_cond = joint_params['use_embedding_for_cond'] if 'use_embedding_for_cond' in joint_params else True
 
 		num_seq_labels = tcr_params['num_seq_labels']
 
@@ -40,8 +41,14 @@ class MoEModelTorch(nn.Module):
 		self.rna_decoder = build_mlp_decoder(rna_params, xdim, hdim)
 
 		if cond_dim > 0:
-			self.cond_emb = torch.nn.Embedding(num_conditional_labels, cond_dim)
+			if use_embedding_for_cond:
+				self.cond_emb = torch.nn.Embedding(num_conditional_labels, cond_dim)
+			else:  # use one hot encoding
+				self.cond_emb = None
+				cond_dim = num_conditional_labels
 		self.cond_input = cond_input
+		self.use_embedding_for_cond = use_embedding_for_cond
+		self.num_conditional_labels = num_conditional_labels
 		cond_input_dim = cond_dim if cond_input else 0
 
 		self.tcr_vae_encoder = MLP(hdim + cond_input_dim, zdim * 2, shared_hidden, activation, 'linear', dropout,
@@ -72,11 +79,11 @@ class MoEModelTorch(nn.Module):
 			tcr_pred: list of reconstructed tcr. tcr_pred = [tcr_pred using z_tcr, tcr_pred using z_joint]
 		"""
 		if conditional is not None:
-			cond_emb_vec = self.cond_emb(conditional)
+			cond_emb_vec = self.cond_emb(conditional) if self.use_embedding_for_cond else torch.nn.functional.one_hot(conditional, self.num_conditional_labels)
 		# Encode TCR
 
 		beta_seq = tcr[:, tcr.shape[1] // 2 * (self.amount_chains == 2):]
-		beta_len = tcr_len[:, self.amount_chains-1]
+		beta_len = tcr_len[:, self.amount_chains - 1]
 		h_beta = self.beta_encoder(beta_seq, beta_len)  # shape=[batch_size, hdim//2]
 
 		if not self.beta_only:

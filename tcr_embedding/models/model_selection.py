@@ -88,6 +88,11 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
         rna_weight = optimization_mode_params['rna_weight']
         params_architecture['loss_weights'] = params_architecture['loss_weights'].append(rna_weight)
 
+    if 'use_embedding_for_cond' in params_experiment:
+        params_architecture['joint']['use_embedding_for_cond'] = params_experiment['use_embedding_for_cond']
+    # if 'cond_input' in params_experiment:
+    #     params_architecture['joint']['cond_input'] = params_experiment['cond_input']
+
     comet = utils.initialize_comet(params_architecture, params_experiment)
 
     model = utils.select_model_by_name(params_experiment['model_name'])
@@ -126,6 +131,8 @@ def run_model_selection(adata, params_experiment, params_optimization, num_sampl
     storage = f'sqlite:///{params_experiment["save_path"]}.db'
     if os.path.exists(params_experiment['save_path'] + '.db'):
         os.remove(params_experiment['save_path'] + '.db')
+    os.makedirs(os.path.dirname(params_experiment['save_path']), exist_ok=True)
+
     study = optuna.create_study(study_name=params_experiment['study_name'], sampler=sampler, storage=storage,
                                 direction=direction, load_if_exists=False)
 
