@@ -26,6 +26,7 @@ parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
 parser.add_argument('--wo_tcr_genes', type=str, default='False')
 parser.add_argument('--conditional', type=str, default='Cohort')
+parser.add_argument('--embedding', type=bool, default=True)
 
 args = parser.parse_args()
 
@@ -55,7 +56,7 @@ if args.wo_tcr_genes == 'True':
     adata = adata[:, non_tcr_genes]
 
 params_experiment = {
-    'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}',
+    'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}_emb_{args.embedding}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
     'early_stop': 5,
@@ -63,8 +64,7 @@ params_experiment = {
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'Tissue+Type', 'functional.cluster'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
     'conditional': args.conditional,
-    'use_embedding_for_cond': False  # use one-hot
-
+    'use_embedding_for_cond': args.embedding  # use one-hot
 }
 if args.model == 'rna':
     params_experiment['balanced_sampling'] = None
