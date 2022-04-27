@@ -49,13 +49,14 @@ adata = adata[adata.obs['set'].isin(['train', 'val'])]
 
 
 params_experiment = {
-    'study_name': f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}',
+    'study_name': f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}_{args.site}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'full_clustering'],
     'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna',
-                              f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
+                              f'haniffa_tcr_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'
+                              + f'{args.site}'),
     'conditional': args.conditional
 }
 if args.model == 'rna':
