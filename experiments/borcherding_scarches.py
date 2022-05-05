@@ -69,7 +69,7 @@ params_experiment = {
     'early_stop': 5,
     'balanced_sampling': 'clonotype',
     'metadata': ['clonotype', 'Sample', 'Type', 'Tissue', 'Tissue+Type', 'functional.cluster'],
-    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}'),
+    'save_path': os.path.join(os.path.dirname(__file__), '..', 'optuna', f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}_set_{args.set}'),
     'conditional': args.conditional,
     'use_embedding_for_cond': args.embedding  # use one-hot
 }
