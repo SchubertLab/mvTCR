@@ -24,6 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--rna_weight', type=int, default=1)
 parser.add_argument('--model', type=str, default='moe')
 parser.add_argument('--gpus', type=int, default=1)
+parser.add_argument('--set', type=int, default=1)
 parser.add_argument('--wo_tcr_genes', type=str, default='False')
 parser.add_argument('--conditional', type=str, default='Cohort')
 parser.add_argument('--embedding', type=bool, default=True)
@@ -34,10 +35,16 @@ adata = utils.load_data('borcherding')
 adata.obs['Tissue+Type'] = [f'{tissue}.{type_}' for tissue, type_ in zip(adata.obs['Tissue'], adata.obs['Type'])]
 
 # Remove some studies from data
-holdout_cohorts = ['GSE154826',  # Lung with normal and tumor cells 18387 cells
-                   'GSE114724',  # Breast only with tumor 5165 cells
-                   'GSE148190',  # Melanoma with LN, Blood and Tumor 9306 cells
-                   ]
+if args.set == 1:
+    holdout_cohorts = ['GSE154826',  # Lung with normal and tumor cells 18387 cells
+                       'GSE121636',  # Renal with 4594 cells
+                       'GSE162500',  # Lung with 18850 cells
+                       ]
+elif args.set == 2:
+    holdout_cohorts = ['GSE154826',  # Lung with normal and tumor cells 18387 cells
+                       'GSE121636',  # Renal with 4594 cells
+                       'GSE139555',  # Mixed with lung, renal, colorectal and encometrical cells
+                       ]
 
 adata = adata[~adata.obs[args.conditional].isin(holdout_cohorts)].copy()
 adata.obsm[args.conditional] = torch.nn.functional.one_hot(torch.tensor(adata.obs[args.conditional].factorize()[0])).numpy()
