@@ -63,7 +63,7 @@ if args.wo_tcr_genes == 'True':
     adata = adata[:, non_tcr_genes]
 
 params_experiment = {
-    'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}_emb_{args.embedding}',
+    'study_name': f'borcherding_{args.model}_{args.rna_weight}_{args.conditional}_{args.wo_tcr_genes}_emb_{args.embedding}_set_{args.set}',
     'comet_workspace': None,  # 'Covid',
     'model_name': args.model,
     'early_stop': 5,
