@@ -110,6 +110,35 @@ class VAEBaseModel(ABC):
 																balanced_sampling, self.batch_size,
 																beta_only=self.beta_only)
 
+	def change_adata(self, new_adata):
+		self.adata = new_adata
+		self.aa_to_id = new_adata.uns['aa_to_id']
+		if self.balanced_sampling is not None and self.balanced_sampling not in self.metadata:
+			self.metadata.append(self.balanced_sampling)
+
+		self.data_train, self.data_val = initialize_data_loader(new_adata, self.metadata, self.conditional, self.label_key,
+																self.balanced_sampling, self.batch_size,
+																beta_only=self.beta_only)
+
+	def add_new_embeddings(self, num_new_embeddings):
+		cond_emb_tmp = self.model.cond_emb.weight.data
+		self.model.cond_emb = torch.nn.Embedding(cond_emb_tmp.shape[0]+num_new_embeddings, cond_emb_tmp.shape[1])
+		self.model.cond_emb.weight.data[:cond_emb_tmp.shape[0]] = cond_emb_tmp
+
+	def freeze_all_weights_except_cond_embeddings(self):
+		"""
+		Freezes conditional embedding weights to train in scArches style, since training data doesn't include
+		previous labels, those embeddings won't be updated
+		"""
+		for param in self.model.parameters():
+			param.requires_grad = False
+
+		self.model.cond_emb.weight.requires_grad = True
+
+	def unfreeze_all(self):
+		for param in self.model.parameters():
+			param.requires_grad = True
+
 	def train(self,
 			  n_epochs=200,
 			  batch_size=512,
@@ -416,9 +445,9 @@ class VAEBaseModel(ABC):
 					  }
 		torch.save(model_file, filepath)
 
-	def load(self, filepath):
+	def load(self, filepath, map_location=torch.device('cuda')):
 		""" Load model for evaluation / inference"""
-		model_file = torch.load(os.path.join(filepath))
+		model_file = torch.load(os.path.join(filepath), map_location=map_location)
 		self.model.load_state_dict(model_file['state_dict'], strict=False)
 		self._train_history = model_file['train_history']
 		self._val_history = model_file['val_history']
