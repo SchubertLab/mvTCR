@@ -105,20 +105,20 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
                 params_experiment['early_stop'], params_experiment['save_path'], comet)
 
     # plot UMAPs
-    model_names = ['reconstruction']
-    if optimization_mode_params['name'] != 'reconstruction':
-        model_names.append('metric')
-    for state in model_names:
-        model.load(os.path.join(params_experiment['save_path'], f'best_model_by_{state}.pt'))
-        for subset in ['train', 'val']:
-            adata_tmp = adata[adata.obs['set'] == subset]
-            latent = model.get_latent(adata_tmp, params_experiment['metadata'], True)
-            title = f'{state}_{subset}'
-            figs = utils.plot_umap_list(latent, title, params_experiment['metadata'])
-            if comet is not None:
-                for fig, group in zip(figs, params_experiment['metadata']):
-                    comet.log_figure(f'{title}_{group}', fig)
     if comet is not None:
+        model_names = ['reconstruction']
+        if optimization_mode_params['name'] != 'reconstruction':
+            model_names.append('metric')
+        for state in model_names:
+            model.load(os.path.join(params_experiment['save_path'], f'best_model_by_{state}.pt'))
+            for subset in ['train', 'val']:
+                adata_tmp = adata[adata.obs['set'] == subset]
+                latent = model.get_latent(adata_tmp, params_experiment['metadata'], True)
+                title = f'{state}_{subset}'
+                figs = utils.plot_umap_list(latent, title, params_experiment['metadata'])
+                if comet is not None:
+                    for fig, group in zip(figs, params_experiment['metadata']):
+                        comet.log_figure(f'{title}_{group}', fig)
         comet.end()
     return model.best_optimization_metric
 
