@@ -44,10 +44,9 @@ def complete_params_experiment(params):
         'label_key': None,
         'n_epochs': 200,
         'kl_annealing_epochs': None,
-        'early_stop': None,
+        'early_stop': 5,
         'save_path': '../saved_models/',
         'model_name': 'moe',
-        'early_stopping': 5,
     }
     for key, value in default_values.items():
         if key not in params:
