@@ -1,4 +1,7 @@
-from comet_ml import Experiment
+try:
+    from comet_ml import Experiment
+except:
+    pass
 import scanpy as sc
 import os
 import random
