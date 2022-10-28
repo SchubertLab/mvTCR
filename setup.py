@@ -34,8 +34,8 @@ setup(
         'full': [
             'comet-ml', 
             'scrublet==0.2.3', 
-            'optuna', 
-            'scirpy==0.6.1', 
+            'optuna==2.10.0', 
+            'scirpy>=0.7', 
             'leidenalg>=0.8.4'
             ],
     }
