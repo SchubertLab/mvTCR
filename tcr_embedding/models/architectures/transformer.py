@@ -112,8 +112,10 @@ class TransformerDecoder(nn.Module):
 
         target_sequence = self.embedding(target_sequence) * math.sqrt(self.num_seq_labels)
         target_sequence = target_sequence + self.positional_encoding(target_sequence)
-
-        target_mask = nn.Transformer.generate_square_subsequent_mask(None, target_sequence.shape[0]).to(self.device)
+        try:
+            target_mask = nn.Transformer.generate_square_subsequent_mask(None, target_sequence.shape[0]).to(self.device)
+        except:  # new version don't need the None
+            target_mask = nn.Transformer.generate_square_subsequent_mask(target_sequence.shape[0]).to(self.device)
         x = self.transformer_decoder(target_sequence, hidden_state, tgt_mask=target_mask)
         x = self.fc_out(x)
         x = x.transpose(0, 1)

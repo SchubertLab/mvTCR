@@ -1,4 +1,7 @@
-from comet_ml import Experiment
+try:
+    from comet_ml import Experiment
+except:
+    pass
 import scanpy as sc
 import os
 import random
@@ -58,9 +61,12 @@ def load_data(source='10x'):
     return data
 
 
-def load_model(adata, path_model):
-    path_base = os.path.dirname(__file__)
-    path_model = os.path.join(path_base, '..', path_model)
+def load_model(adata, path_model, base_path=None):
+    if base_path is None:
+        base_path = os.path.dirname(__file__)
+        path_model = os.path.join(base_path, '..', path_model)
+    else:
+        path_model = os.path.join(base_path, path_model)
     model_file = torch.load(path_model)
 
     params_architecture = model_file['params_architecture']
