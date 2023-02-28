@@ -341,6 +341,35 @@ class VAEBaseModel(ABC):
 		latent.obs.index = adata.obs.index
 		latent.obs[metadata] = adata.obs[metadata]
 		return latent
+	
+	def get_all_latent(self, adata, metadata, return_mean=True):
+		"""
+		Get latent
+		:param adata:
+		:param metadata: list of str, list of metadata that is needed, not really useful at the moment
+		:param return_mean: bool, calculate latent space without sampling
+		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
+		"""
+		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
+												  conditional=self.conditional)
+
+		zs = []
+		with torch.no_grad():
+			self.model = self.model.to(self.device)
+			self.model.eval()
+			for rna, tcr, seq_len, _, labels, conditional in data_embed:
+				rna = rna.to(self.device)
+				tcr = tcr.to(self.device)
+
+				if self.conditional is not None:
+					conditional = conditional.to(self.device)
+				else:
+					conditional = None
+				z, mu, _, _, _ = self.model(rna, tcr, seq_len, conditional)
+				if return_mean:
+					z = mu
+				zs.append(z)
+		return zs
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):
 		data = initialize_latent_loader(adata_latent, self.batch_size, self.conditional)
