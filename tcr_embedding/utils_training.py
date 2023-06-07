@@ -29,24 +29,24 @@ def load_data(source='10x'):
     path_current = os.path.dirname(__file__)
     path_base = os.path.join(path_current, '../data/')
 
-    source = source.lower()
-    if source == '10x':
+    source_low = source.lower()
+    if source_low == '10x':
         path_source = '10x_CD8TC/v7_avidity.h5ad'
-    elif source == 'bcc':
+    elif source_low == 'bcc':
         path_source = 'BCC/06_bcc_highly_var_5000.h5ad'
-    elif source == 'scc':
+    elif source_low == 'scc':
         path_source = 'SCC/06_scc_highly_var_5000.h5ad'
-    elif source == 'covid':
+    elif source_low == 'covid':
         path_source = 'Covid/04_covid_highly_var_5000.h5ad'
-    elif source == 'haniffa':
+    elif source_low == 'haniffa':
         path_source = 'Haniffa/v3_conditional.h5ad'
-    elif source == 'haniffa_bcr':
+    elif source_low == 'haniffa_bcr':
         path_source = 'Haniffa/02_bcrs_annoated.h5ad'
-    elif source == 'borcherding_test':
+    elif source_low == 'borcherding_test':
         path_source = 'Borcherding/04_borch_annotated_test.h5ad'
-    elif source == 'borcherding':
+    elif source_low == 'borcherding':
         path_source = 'Borcherding/04_borch_annotated.h5ad'
-    elif source == 'bcells_covid':
+    elif source_low == 'bcells_covid':
         path_source = 'Bcells_Covid/02_bcrs_annoated.h5ad'
     else:
         path_source = source
@@ -62,12 +62,20 @@ def load_data(source='10x'):
 
 
 def load_model(adata, path_model, base_path=None):
+    available_gpu = torch.cuda.is_available()
+
     if base_path is None:
         base_path = os.path.dirname(__file__)
         path_model = os.path.join(base_path, '..', path_model)
     else:
         path_model = os.path.join(base_path, path_model)
-    model_file = torch.load(path_model)
+
+    if available_gpu:
+        model_file = torch.load(path_model)
+    else:
+        print('Warning: cuda not available, loading model on CPU')
+        model_file = torch.load(path_model, map_location=torch.device('cpu'))
+
 
     params_architecture = model_file['params_architecture']
     balanced_sampling = model_file['balanced_sampling']
@@ -79,7 +87,12 @@ def load_model(adata, path_model, base_path=None):
     model_class = select_model_by_name(model_file['model_type'])
     model = model_class(adata, params_architecture, balanced_sampling, metadata, conditional,
                         optimization_mode_params, label_key)
-    model.load(path_model)
+    
+    if available_gpu:
+        model.load(path_model)
+    else:
+        model.load(path_model, map_location=torch.device('cpu'))
+        
     return model
 
 
