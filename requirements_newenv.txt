@@ -2,7 +2,7 @@ comet-ml
 pandas
 tqdm
 scikit-learn
-anndata==0.10
+anndata==0.9.2
 leidenalg==0.10.1
 numba==0.57.1
 numpy==1.24.3
