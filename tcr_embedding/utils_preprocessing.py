@@ -11,15 +11,19 @@ class Preprocessing():
 	@staticmethod
 	def check_if_valid_adata(adata):
 		valid_adata = True
+		#expression matrix data checks
+		if adata.X.min() < 0:
+			logging.warning('Invalid entries in expression matrix. (Negative values in adata.X)')
+			valid_adata = False
 		#check if data is normalized
-		# TODO treshhold?
-		if np.std(adata.X.sum(axis=1)) >= 1:
-			logging.warning(f'Looks like your data is not normalized (counts per target_sum).\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations this warning might be false.')
-			#valid_adata = False
+		if False in adata.var.highly_variable.unique():
+			if np.std(adata.X.sum(axis=1)) >= 1:
+				logging.warning(f'Looks like your data is not normalized (counts per target_sum).\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations this warning might be false.')
+		else:
+			logging.warning('Only highly-variable genes found in adata. Make sure they are properly normalized before proceeding!')
 		#log1p
-		# TODO ideas
-		if True:
-			logging.warning('Is your data log(X + 1) transformed?')
+		if adata.X.max() > np.log1p(10000):
+			logging.warning('Looks like your data is not log1p transformed! Either use log1p or other variance stabilizing functions.')
 			#valid_adata = False
 		#highly var genes
 		if adata.shape[1] > 5000:
