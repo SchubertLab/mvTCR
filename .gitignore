@@ -1,3 +1,6 @@
+build/
+dist/
+mvtcr.egg-info/
 data/
 saved_models/
 .idea/
