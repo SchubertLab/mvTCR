@@ -1,9 +1,15 @@
 from setuptools import setup, find_packages
+from pathlib import Path
+
+this_directory = Path(__file__).parent
+long_description = (this_directory / "pypi_description.md").read_text()
 
 setup(
     name='mvtcr',
     version='0.1.2',
     description='mvTCR: A multimodal generative model to learn a unified representation across TCR sequences and scRNAseq data for joint analysis of single-cell immune profiling data',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     author='Felix Drost, Yang An, Lisa M Dratva, Rik GH Lindeboom, Muzlifah Haniffa, Sarah A Teichmann, Fabian Theis, Mohammad Lotfollahi, Benjamin Schubert',
     maintainer='Felix Drost, Yang An, Irene Bonafonte Pardàs, Jan-Philipp Leusch',
     url='https://github.com/SchubertLab/mvTCR',
@@ -24,12 +30,12 @@ setup(
         'umap-learn==0.5.1',
         'matplotlib==3.6.3',
         'sqlalchemy==1.4.26',
-        'torch>=1.8.0'],
+        'dunamai==1.18.1'],
     classifiers=[
         'Programming Language :: Python :: 3 :: Only',
         'Operating System :: Microsoft',
         'Operating System :: POSIX :: Linux',
-        'Operating System :: MacOS',
+        #'Operating System :: MacOS',
         'Environment :: GPU :: NVIDIA CUDA',
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Science/Research',

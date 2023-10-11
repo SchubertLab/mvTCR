@@ -18,7 +18,7 @@ class Preprocessing():
 		#check if data is normalized
 		if False in adata.var.highly_variable.unique():
 			if np.std(adata.X.sum(axis=1)) >= 1:
-				logging.warning(f'Looks like your data is not normalized (counts per target_sum).\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations this warning might be false.')
+				logging.warning(f'Looks like your data is not normalized with counts per target_sum.\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations or this warning might be false.')
 		else:
 			logging.warning('Only highly-variable genes found in adata. Make sure they are properly normalized before proceeding!')
 		#log1p

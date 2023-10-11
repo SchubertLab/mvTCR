@@ -13,6 +13,6 @@ optuna==2.10.1
 umap-learn==0.5.1
 matplotlib==3.6.3
 sqlalchemy==1.4.26
-#anndata2ri
+dunamai==1.18.1
 
 # torch==1.8.0 -f https://download.pytorch.org/whl/cu102/torch_stable.html

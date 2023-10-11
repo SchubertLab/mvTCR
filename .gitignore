@@ -16,6 +16,8 @@ optuna/
 **/*.pyc
 **/__pycache__/
 config/API_key.txt
+requirements_newenv.txt
+pypi_description.md
 
 **/baseline/
 manuscript/journal/results/
