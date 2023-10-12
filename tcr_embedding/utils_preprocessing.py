@@ -18,7 +18,7 @@ class Preprocessing():
 		#check if data is normalized
 		if False in adata.var.highly_variable.unique():
 			if np.std(adata.X.sum(axis=1)) >= 1:
-				logging.warning(f'Looks like your data is not normalized with counts per target_sum.\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations or this warning might be false.')
+				logging.warning(f'Looks like your data is not normalized with counts per target_sum.\nStd of cells total sum of genes: {np.std(adata.X.sum(axis=1))}. In case of other normalizations, this warning might be false.')
 		else:
 			logging.warning('Only highly-variable genes found in adata. Make sure they are properly normalized before proceeding!')
 		#log1p
@@ -160,27 +160,27 @@ class Preprocessing():
 		adata.uns[column_id + "_enc"] = enc.categories_
 
 	@staticmethod
-	def group_shuffle_split(adata_tmp, group_col, val_split, random_seed=42):
+	def group_shuffle_split(adata, group_col, val_split, random_seed=42):
 		'''
 		Grou-shuffle-split
 		:param adata_tmp: adata object
 		:param group_col: str key for the column containing the groups to be kept in the same set
 		:param val_split: float defining size of val split
 		'''
-		groups = adata_tmp.obs[group_col]
+		groups = adata.obs[group_col]
 		splitter = GroupShuffleSplit(test_size=val_split, n_splits=5, random_state=random_seed)
 
 		best_value = 1
 		train, val = None, None
-		for train_tmp, val_tmp in splitter.split(adata_tmp, groups=groups):
-			split_value = abs(len(val_tmp) / len(adata_tmp) - val_split)
+		for train_tmp, val_tmp in splitter.split(adata, groups=groups):
+			split_value = abs(len(val_tmp) / len(adata) - val_split)
 			if split_value < best_value:
 				train = train_tmp
 				val = val_tmp
 				best_value = split_value
 
-		train = adata_tmp[train]
-		val = adata_tmp[val]
+		train = adata[train]
+		val = adata[val]
 		return train, val
 
 	@staticmethod
@@ -230,7 +230,7 @@ class Preprocessing():
 		return train, test
 	
 	@staticmethod
-	def preprocessing_pipeline(adata, clonotype_key_added, column_cdr3a, column_cdr3b, cond_vars, val_split, stratify_col, group_col, random_seed=42):
+	def preprocessing_pipeline(adata, clonotype_key_added, column_cdr3a, column_cdr3b, cond_vars, val_split, group_col, random_seed=42):
 		
 		if Preprocessing.check_if_valid_adata(adata):
 			Preprocessing.encode_clonotypes(adata, key_added=clonotype_key_added)
@@ -239,9 +239,9 @@ class Preprocessing():
 			for var in cond_vars:
 				Preprocessing.encode_conditional_var(adata, var)
 			
-			train, val = Preprocessing.stratified_group_shuffle_split(adata.obs, stratify_col, group_col, val_split, random_seed)
+			train, val = Preprocessing.group_shuffle_split(adata, group_col, val_split, random_seed)
 			adata.obs['set'] = 'train'
-			adata.obs.loc[val.index, 'set'] = 'val'
+			adata.obs.loc[val.obs.index, 'set'] = 'val'
 
 
 def encode_tcr(adata, column_cdr3a, column_cdr3b, pad):
