@@ -19,7 +19,8 @@ We provide tutorials in the following notebooks:
 - tutorials/01_preprocessing.ipynb : adding requiered annotation and filtering on the data
 - tutorials/02_training_analysis.ipynb : training the model, when you have some celltype and clonotype annotation
 - tutorials/03_training_prediction.ipynb : training the model, when you have specificity annotation
-The notebooks run  expected output is contained in each notebook. 
+
+The notebooks are run on a subsampled dataset and can be executed within 15 minutes each. The expected output is provided in each notebook. 
 
 ## Reproducability
 To reproduce the results of the paper, please refer to: https://github.com/SchubertLab/mvTCR_reproducibility
