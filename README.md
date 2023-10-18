@@ -1,7 +1,6 @@
 # mvTCR
 
 ## Install
-
 ### Linux
 `conda create --name mvTCR python=3.8.8 -y && conda activate mvTCR && pip install mvtcr && conda install nb_conda_kernels -y`
 
@@ -12,11 +11,15 @@ Then execute the line to install all the requirements except PyTorch
 
 Then install PyTorch 1.8.0 with the correct CUDA Version following the command here: https://pytorch.org/get-started/previous-versions/
 
+### Installation Note
+The installation procedure will take approx. 10 minutes and has been tested on Windows 10 and Linux 4.18.0. For MAC with M1 chip, there are currently several dependencies not available. A machine with GPU- and CUDA-support is heavily encouraged.
+
 ## Tutorial
 We provide tutorials in the following notebooks:
 - tutorials/01_preprocessing.ipynb : adding requiered annotation and filtering on the data
 - tutorials/02_training_analysis.ipynb : training the model, when you have some celltype and clonotype annotation
 - tutorials/03_training_prediction.ipynb : training the model, when you have specificity annotation
+The notebooks run  expected output is contained in each notebook. 
 
 ## Reproducability
 To reproduce the results of the paper, please refer to: https://github.com/SchubertLab/mvTCR_reproducibility
