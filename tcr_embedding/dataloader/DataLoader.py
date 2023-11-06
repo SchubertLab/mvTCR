@@ -19,7 +19,7 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
     """
     if metadata is None:
         metadata = []
-
+    
     # Splits everything into train and val
     if val_split is not None:
         train_mask = (adata.obs[val_split] == 'train').values
@@ -32,19 +32,20 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
 
     if beta_only:
         tcr_seq = np.concatenate([adata.obsm['beta_seq']], axis=1)
-        tcr_length = np.vstack([adata.obs['beta_len']]).T
+        tcr_length = np.vstack([adata.obsm['beta_len']]).T
     else:
         tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)
-        tcr_length = np.vstack([adata.obs['alpha_len'], adata.obs['beta_len']]).T
+        tcr_length = np.vstack([adata.obsm['alpha_len'], adata.obsm['beta_len']]).T
+
     tcr_train = tcr_seq[train_mask]
     tcr_val = tcr_seq[~train_mask]
 
     tcr_length_train = tcr_length[train_mask].tolist()
     tcr_length_val = tcr_length[~train_mask].tolist()
-
+    #TODO metadata in obs?
     metadata_train = adata.obs[metadata][train_mask].to_numpy()
     metadata_val = adata.obs[metadata][~train_mask].to_numpy()
-
+ 
     if conditional is not None:
         conditional_train = adata.obsm[conditional][train_mask]
         conditional_val = adata.obsm[conditional][~train_mask]

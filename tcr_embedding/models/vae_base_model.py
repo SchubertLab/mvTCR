@@ -13,7 +13,7 @@ import scanpy as sc
 from abc import ABC, abstractmethod
 
 from .losses.kld import KLD
-
+#TODO
 from tcr_embedding.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
 from tcr_embedding.dataloader.DataLoader import initialize_prediction_loader
 
@@ -317,7 +317,6 @@ class VAEBaseModel(ABC):
 		"""
 		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
 												  conditional=self.conditional)
-
 		zs = []
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
@@ -339,7 +338,10 @@ class VAEBaseModel(ABC):
 				zs.append(z)
 		latent = sc.AnnData.concatenate(*zs)
 		latent.obs.index = adata.obs.index
-		latent.obs[metadata] = adata.obs[metadata]
+		#TODO
+		#change obs to obsm
+		for key in metadata:
+			latent.obsm[key] = adata.obs[key]
 		return latent
 	
 	def get_all_latent(self, adata, metadata, return_mean=True):

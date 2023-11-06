@@ -104,8 +104,8 @@ def get_square_pearson(ground_truth, prediction):
 
 def get_knn_f1_within_set(latent, column_name):
     con = latent.obsp['connectivities'].A.astype(bool)
-    nearest_neighbor_label = [latent.obs[column_name].values[row].tolist()[0] for row in con]
-    labels_true = latent.obs[column_name].values
+    nearest_neighbor_label = [latent.obsm[column_name].values[row].tolist()[0] for row in con]
+    labels_true = latent.obsm[column_name].values
     if torch.is_tensor(nearest_neighbor_label[0]):
         nearest_neighbor_label = [str(el.item()) for el in nearest_neighbor_label]
         labels_true = [str(el.item()) for el in labels_true]
