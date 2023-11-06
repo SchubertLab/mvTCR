@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupShuffleSplit
 class Preprocessing():
 
 	@staticmethod
-	def check_if_valid_adata(adata):
+	def check_if_valid_adata_new(adata):
 		valid_adata = True
 		#expression matrix data checks
 		if adata.X.min() < 0:
@@ -33,21 +33,25 @@ class Preprocessing():
 			logging.warning('The data contains less than 500 genes. Please make sure you have a sufficient amount of genes')
 			#valid_adata = False
 		#scirpy
-		if 'False' in adata.obs['has_ir'].unique():
-			logging.warning('Some or all cells lack scirpy annotation. Please add V(D)J gene usage information to the data before proceeding.')
+		if 'airr' not in adata.obsm:
+			logging.warning('No AIRR annotation found in adata.obsm. Please use scirpy annotation convention.')
 			valid_adata = False
 		#if 'True' in adata.obs['multi_chain'].unique():
 		#	logging.warning('There are entries with multiple chains. Make sure to remove them.')
-		vdj_nans = np.array([adata.obs['IR_VJ_1_junction_aa'].isna().sum(),
-	     					(adata.obs['IR_VJ_1_junction_aa'] == 'None').sum(),
-        					adata.obs['IR_VJ_1_junction_aa'].isna().sum(),
-	     					(adata.obs['IR_VJ_1_junction_aa'] == 'None').sum()])
-		if vdj_nans.sum() != 0:
-			logging.warning(f'Some entries have missing or nan values for V(D)J gene usage. Make sure to handle them.\nVJ nans: {vdj_nans[0]}, VDJ nans: {vdj_nans[2]}')
+		junction_aa = ir.get.airr(adata, "junction_aa").copy()
+		junction_aa_nans = np.array([
+			junction_aa.VJ_1_junction_aa.isna().sum(),
+			junction_aa.VJ_2_junction_aa.isna().sum(),
+			junction_aa.VDJ_1_junction_aa.isna().sum(),
+			junction_aa.VDJ_2_junction_aa.isna().sum(),
+		])
+		if junction_aa_nans[:1].sum() != 0:
+			logging.warning(f'Not all cells have sufficient AIRR information. You need at least one sequence for alpha and beta chain respectively.\n {junction_aa_nans[0]} VJ nans, {junction_aa_nans[2]} VDJ nans.')
 			valid_adata = False
-		
+		#logging.warn(f'Found {adata.shape[0] - junction_aa_nans[1]} VJ and {adata.shape[0] - junction_aa_nans[3]} VDJ cells with more than one sequence for a chain.')
+
 		#return valid_adata
-		return True
+		return valid_adata
 
 	@staticmethod
 	def encode_clonotypes(adata, key_added='clonotype'):
@@ -60,71 +64,80 @@ class Preprocessing():
 		ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only')
 
 	@staticmethod
-	def encode_tcr(adata, column_cdr3a='IR_VJ_1_junction_aa', column_cdr3b='IR_VDJ_1_junction_aa', alpha_label_col='alpha_seq', alpha_length_col='alpha_len', beta_label_col='beta_seq', beta_length_col='beta_len', pad=None):
+	def encode_tcr_new(adata, airr_name='junction_aa', alpha_label_key='alpha_seq', alpha_length_key='alpha_len', beta_label_key='beta_seq', beta_length_key='beta_len', aa_encoding_dict=None, pad=None, start_end_symbol=False):
 		"""
 		Encodes the CDR3 alpha and CDR3 beta chain into numerical values
 		:param adata: adata object
-		:param column_cdr3a: column in adata.obs storing the cdr3alpha chain
-		:param column_cdr3b: column in adata.obs storing the cdr3beta chain
+		:param airr_name: str, name in awkward array where airr amino acid sequences are stored
+		:param alpha_label_key: str, name in adata.obsm where the encoded sequences are stored
+		:param alpha_length_key: str, name in adata.obsm where the length of the unpadded sequences are stored
+		:param beta_label_key: str, name in adata.obsm
+		:param beta_length_key: str, name in adata.obsm
 		:param pad: int, amount of position to pad the sequence to
 		:return: stores the numeric embedding to adata.obsm['alpha_seq'] and adata.obsm['beta_seq']
 		"""
+		junction_aa = ir.get.airr(adata, airr_name)
 		if not pad:
-			len_beta = adata.obs[column_cdr3a].str.len().max()
-			len_alpha= adata.obs[column_cdr3b].str.len().max()
-			pad = max(len_beta, len_alpha)
+			#TODO this correct? alpha VJ; beta VDJ
+			len_alpha= junction_aa.VJ_1_junction_aa.str.len().max()
+			len_beta = junction_aa.VDJ_1_junction_aa.str.len().max()
+			pad = max(len_alpha, len_beta)
 
-		aa_to_id = {'_': 0, 'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'K': 9, 'L': 10, 'M': 11,
-					'N': 12, 'P': 13, 'Q': 14, 'R': 15, 'S': 16, 'T': 17, 'V': 18, 'W': 19, 'Y': 20, '+': 21,
-					'<': 22, '>': 23}
+		if not aa_encoding_dict:
+			aa_to_id = {'_': 0, 'A': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'K': 9, 'L': 10, 'M': 11,
+						'N': 12, 'P': 13, 'Q': 14, 'R': 15, 'S': 16, 'T': 17, 'V': 18, 'W': 19, 'Y': 20, '+': 21,
+						'<': 22, '>': 23}
+			
+		if alpha_length_key:
+			adata.obsm[alpha_length_key] = junction_aa.VJ_1_junction_aa.str.len().values
+		if beta_length_key:
+			adata.obsm[beta_length_key] = junction_aa.VDJ_1_junction_aa.str.len().values
+
+	
+		if start_end_symbol:
+			adata.obsm['start_end_symbol_seqs'] = '<' + junction_aa[['VJ_1_junction_aa', 'VDJ_1_junction_aa']].astype('str') + '>'
+			if type(pad) is not bool:
+				pad += 2
+	
+
 		adata.uns['aa_to_id'] = aa_to_id
-		Preprocessing.aa_encoding(adata, read_col=column_cdr3b, label_col=beta_label_col, length_col=beta_length_col, pad=pad, aa_to_id=aa_to_id,
-					start_end_symbol=False)
-		Preprocessing.aa_encoding(adata, read_col=column_cdr3a, label_col=alpha_label_col, length_col=alpha_length_col, pad=pad, aa_to_id=aa_to_id,
-					start_end_symbol=False)
+
+		_aa_encoding(adata, junction_aa.VJ_1_junction_aa, ohe_col=None, label_col=beta_label_key, pad=pad, aa_to_id=None)
+		_aa_encoding(adata, junction_aa.VDJ_1_junction_aa, ohe_col=None, label_col=alpha_label_key, pad=pad, aa_to_id=None)
 
 	@staticmethod
-	def aa_encoding(adata, read_col, ohe_col=None, label_col=None, length_col=None, pad=False, aa_to_id=None, start_end_symbol=True):
+	def _aa_encoding(adata, seq_list, ohe_col=None, label_col=None, pad=False, aa_to_id=None):
 		"""
 		Encoding of protein or nucleotide sequence inplace, either one-hot-encoded or as index labels and/or one-hot-encoding
 		:param adata: adata file
-		:param read_col: str column containing sequence
+		:param seq_list: pd.series (or list or np array?) with amino acid sequences of TCA or TCB
 		:param ohe_col: None or str, if str column to write one-hot-encoded sequence into
 		:param label_col: None or str, if str then write labels as index to this column
-		:param length_col: str column None or str, if str write sequence length into this column
 		:param pad: bool or int value, if int value then the sequence will be pad to this value,
 					if True then pad_len will be determined by taking the longest sequence length in adata
 		:param aa_to_id: None or dict, None will create a dict in this code, dict should contain {aa: index}
-		:param start_end_symbol: bool, add a start '<' and end '>' symbol to each sequence
 		:return:
 		"""
 		if label_col is None and ohe_col is None:
 			raise AssertionError('Specify at least one column to write: ohe_col or label_col')
-
-		if start_end_symbol:
-			adata.obs[read_col] = '<' + adata.obs[read_col].astype('str') + '>'
-			if type(pad) is not bool:
-				pad += 2
-
-		if length_col:
-			adata.obs[length_col] = adata.obs[read_col].str.len()
-
+		
 		# Padding if specified
 		if type(pad) is not bool:
-			sequence_col = adata.obs[read_col].str.ljust(pad, '_')
+			seq_list = seq_list.str.ljust(pad, '_')
 		elif pad:
-			pad_len = adata.obs[read_col].str.len().max()
-			sequence_col = adata.obs[read_col].str.ljust(pad_len, '_')
-		else:
-			sequence_col = adata.obs[read_col]
+			pad_len = seq_list.str.len().max()
+			seq_list = seq_list.str.ljust(pad_len, '_')
 
 		# tokenize each character, i.e. create list of characters
-		aa_tokens = sequence_col.apply(lambda x: list(x))
+		aa_tokens = seq_list.apply(lambda x: list(x))
 
 		# dict containing aa name as key and token-id as value
 		if aa_to_id is None:
-			unique_aa_tokens = sorted(set([x for sublist in aa_tokens for x in sublist]))
-			aa_to_id = {aa: id_ for id_, aa in enumerate(unique_aa_tokens)}
+			try:
+				aa_to_id = adata.uns['aa_to_id']
+			except:
+				unique_aa_tokens = sorted(set([x for sublist in aa_tokens for x in sublist]))
+				aa_to_id = {aa: id_ for id_, aa in enumerate(unique_aa_tokens)}
 
 		# convert aa to token_id (i.e. unique integer for each aa)
 		token_ids = [[aa_to_id[token] for token in aa_token] for aa_token in aa_tokens]
@@ -143,8 +156,6 @@ class Preprocessing():
 			token_ids = [np.array(token_id) for token_id in token_ids]
 			# adata.obs[label_col] = token_ids
 			adata.obsm[label_col] = np.stack(token_ids)
-
-		adata.uns['aa_to_id'] = aa_to_id
 
 
 	@staticmethod
