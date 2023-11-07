@@ -102,8 +102,8 @@ class Preprocessing():
 
 		adata.uns['aa_to_id'] = aa_to_id
 
-		_aa_encoding(adata, junction_aa.VJ_1_junction_aa, ohe_col=None, label_col=beta_label_key, pad=pad, aa_to_id=None)
-		_aa_encoding(adata, junction_aa.VDJ_1_junction_aa, ohe_col=None, label_col=alpha_label_key, pad=pad, aa_to_id=None)
+		Preprocessing._aa_encoding(adata, junction_aa.VJ_1_junction_aa, ohe_col=None, label_col=beta_label_key, pad=pad, aa_to_id=None)
+		Preprocessing._aa_encoding(adata, junction_aa.VDJ_1_junction_aa, ohe_col=None, label_col=alpha_label_key, pad=pad, aa_to_id=None)
 
 	@staticmethod
 	def _aa_encoding(adata, seq_list, ohe_col=None, label_col=None, pad=False, aa_to_id=None):
