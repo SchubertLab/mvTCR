@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupShuffleSplit
 class Preprocessing():
 
 	@staticmethod
-	def check_if_valid_adata_new(adata):
+	def check_if_valid_adata(adata):
 		valid_adata = True
 		#expression matrix data checks
 		if adata.X.min() < 0:
