@@ -64,7 +64,7 @@ class Preprocessing():
 		ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only')
 
 	@staticmethod
-	def encode_tcr_new(adata, airr_name='junction_aa', alpha_label_key='alpha_seq', alpha_length_key='alpha_len', beta_label_key='beta_seq', beta_length_key='beta_len', aa_encoding_dict=None, pad=None, start_end_symbol=False):
+	def encode_tcr(adata, airr_name='junction_aa', alpha_label_key='alpha_seq', alpha_length_key='alpha_len', beta_label_key='beta_seq', beta_length_key='beta_len', aa_encoding_dict=None, pad=None, start_end_symbol=False):
 		"""
 		Encodes the CDR3 alpha and CDR3 beta chain into numerical values
 		:param adata: adata object
