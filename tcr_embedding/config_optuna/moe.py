@@ -1,3 +1,4 @@
+
 def suggest_params(trial):
     dropout = trial.suggest_float('dropout', 0, 0.3, step=0.05)  # used twice
     activation = trial.suggest_categorical('activation', ['linear', 'leakyrelu'])  # used for conditional sampling
@@ -45,3 +46,54 @@ def suggest_params(trial):
         },
     }
     return params
+'''
+def suggest_params(trial):
+    dropout = 0.2  # used twice
+    activation = 'linear'  # used for conditional sampling
+    rna_hidden = 1250  # hdim should be less than rna_hidden
+    hdim = 100  # shared_hidden should be less than hdim
+    shared_hidden = 200  # zdim should be less than shared_hidden
+    num_layers = 1
+    rna_num_layers = 1
+    tfmr_encoding_layers = 3  # used twice
+    loss_weights_kl = 7.41765203487182e-09
+    loss_weights_seq = 0.003984190594434687
+    
+    #'loss_weights_tcr': 0.003984190594434687
+
+    params = {
+        'batch_size': 512,
+        'learning_rate': 0.000124,
+        'loss_weights': [1.0, loss_weights_seq, loss_weights_kl],
+
+        'joint': {
+            'activation': activation,
+            'batch_norm': True,
+            'dropout': dropout,
+            'hdim': hdim,
+            'losses': ['MSE', 'CE'],
+            'num_layers': num_layers,
+            'shared_hidden': [shared_hidden] * num_layers,
+            'zdim': 10,
+            'c_embedding_dim': 20,
+        },
+        'rna': {
+            'activation': 'leakyrelu',
+            'batch_norm': True,
+            'dropout': dropout,
+            'gene_hidden': [rna_hidden] * rna_num_layers,
+            'num_layers': rna_num_layers,
+            'output_activation': 'linear'
+        },
+        'tcr': {
+            'embedding_size': 16,
+            'num_heads': 8,
+            'forward_expansion': 4,
+            'encoding_layers': tfmr_encoding_layers,
+            'decoding_layers': tfmr_encoding_layers,  # encoding_layers is used here too
+            'dropout': 0.0,
+        },
+    }
+    return params
+
+'''
