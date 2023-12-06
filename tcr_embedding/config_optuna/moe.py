@@ -1,4 +1,3 @@
-'''
 def suggest_params(trial):
     dropout = trial.suggest_float('dropout', 0, 0.3, step=0.05)  # used twice
     activation = trial.suggest_categorical('activation', ['linear', 'leakyrelu'])  # used for conditional sampling
@@ -47,6 +46,7 @@ def suggest_params(trial):
     }
     return params
 '''
+Haniffa pub
 def suggest_params(trial):
     params = {'batch_size': 512,
             'learning_rate': 0.00046187266176987815,
@@ -79,3 +79,4 @@ def suggest_params(trial):
             'max_tcr_length': 27,
             'num_seq_labels': 24}}
     return params
+'''
