@@ -1,40 +1,3 @@
-#10x full pub
-def suggest_params(trial):
-    params = {'batch_size': 512,
-        'learning_rate': 2.564405774575956e-05,
-        'loss_weights': [1.0, 0.0001473161515034792, 2.607548805953069e-08],
-        'joint': {'activation': 'linear',
-        'batch_norm': True,
-        'dropout': 0.05,
-        'hdim': 400,
-        'losses': ['MSE', 'CE'],
-        'num_layers': 1,
-        'shared_hidden': [200],
-        'zdim': 50,
-        'c_embedding_dim': 20,
-        'num_conditional_labels': 4,
-        'cond_dim': 20,
-        'cond_input': True},
-        'rna': {'activation': 'leakyrelu',
-        'batch_norm': True,
-        'dropout': 0.05,
-        'gene_hidden': [500, 500],
-        'num_layers': 2,
-        'output_activation': 'linear',
-        'xdim': 5000},
-        'tcr': {'embedding_size': 64,
-        'num_heads': 2,
-        'forward_expansion': 4,
-        'encoding_layers': 2,
-        'decoding_layers': 2,
-        'dropout': 0.05,
-        'max_tcr_length': 26,
-        'num_seq_labels': 24}}
-
-    return params
-
-
-'''
 def suggest_params(trial):
     dropout = trial.suggest_float('dropout', 0, 0.3, step=0.05)  # used twice
     activation = trial.suggest_categorical('activation', ['linear', 'leakyrelu'])  # used for conditional sampling
@@ -82,4 +45,3 @@ def suggest_params(trial):
         },
     }
     return params
-'''

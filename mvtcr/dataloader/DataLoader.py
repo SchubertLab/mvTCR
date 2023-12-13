@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import random
 
-from tcr_embedding.dataloader.Dataset import JointDataset
+from mvtcr.dataloader.Dataset import JointDataset
 
 
 def create_datasets(adata, val_split, metadata=None, conditional=None, labels=None, beta_only=False):

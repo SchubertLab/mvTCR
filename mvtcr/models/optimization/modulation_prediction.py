@@ -1,5 +1,5 @@
 import operator
-from tcr_embedding.models.pertubation_prediction import run_scgen_cross_validation
+from mvtcr.models.pertubation_prediction import run_scgen_cross_validation
 
 
 def report_modulation_prediction(adata, model, optimization_mode_params, epoch, comet):

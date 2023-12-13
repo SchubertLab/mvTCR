@@ -6,11 +6,11 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import pytorch_lightning as pl
 
-import tcr_embedding.utils_training as utils_train
+import mvtcr.utils_training as utils_train
 
-from tcr_embedding.config_optuna.mlp_count import suggest_params
-from tcr_embedding.models.architectures.mlp_count_prediction import build_mlp
-from tcr_embedding.models.losses.msle import MSLE
+from mvtcr.config_optuna.mlp_count import suggest_params
+from mvtcr.models.architectures.mlp_count_prediction import build_mlp
+from mvtcr.models.losses.msle import MSLE
 
 
 class DecisionHead(pl.LightningModule,):

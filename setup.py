@@ -6,14 +6,14 @@ long_description = (this_directory / "pypi_description.md").read_text()
 
 setup(
     name='mvtcr',
-    version='0.1.3',
+    version='0.2.0',
     description='mvTCR: A multimodal generative model to learn a unified representation across TCR sequences and scRNAseq data for joint analysis of single-cell immune profiling data',
     long_description=long_description,
     long_description_content_type='text/markdown',
     author='Felix Drost, Yang An, Lisa M Dratva, Rik GH Lindeboom, Muzlifah Haniffa, Sarah A Teichmann, Fabian Theis, Mohammad Lotfollahi, Benjamin Schubert',
     maintainer='Felix Drost, Yang An, Irene Bonafonte Pardàs, Jan-Philipp Leusch',
     url='https://github.com/SchubertLab/mvTCR',
-    packages=find_packages(include=['tcr_embedding', 'tcr_embedding.*']),
+    packages=find_packages(include=['mvtcr', 'mvtcr.*']),
     install_requires=[
         'scanpy==1.7.0',
         'scirpy>=0.7',

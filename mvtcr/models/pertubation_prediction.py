@@ -1,4 +1,4 @@
-from tcr_embedding.evaluation.PertubationPrediction import evaluate_pertubation
+from mvtcr.evaluation.PertubationPrediction import evaluate_pertubation
 import numpy as np
 import scanpy as sc
 import time

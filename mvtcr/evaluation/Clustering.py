@@ -1,6 +1,6 @@
 import random
-import tcr_embedding.evaluation.WrapperFunctions as Wrapper
-import tcr_embedding.evaluation.Metrics as Metrics
+import mvtcr.evaluation.WrapperFunctions as Wrapper
+import mvtcr.evaluation.Metrics as Metrics
 
 import scanpy as sc
 from anndata import AnnData

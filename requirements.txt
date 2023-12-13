@@ -1,18 +1,15 @@
-scanpy==1.7.0
-scirpy>=0.7
-numba==0.52.0
-pandas==1.2.3
-anndata==0.8.0
-leidenalg==0.8.4
 comet-ml
-numpy==1.20.3
-scikit-learn==0.24.1
-scrublet==0.2.3
+pandas
 tqdm
-optuna==2.10.1
-umap-learn==0.5.1
-matplotlib==3.6.3
-sqlalchemy==1.4.26
-dunamai==1.18.1
+scikit-learn
+anndata
+leidenalg
+numba
+numpy
+optuna
+scanpy
+scirpy
+scrublet
+umap-learn
 
-# torch==1.8.0 -f https://download.pytorch.org/whl/cu102/torch_stable.html
+#torch

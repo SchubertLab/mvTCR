@@ -3,7 +3,7 @@ import os
 import sys
 import importlib
 
-import tcr_embedding.utils_training as utils
+import mvtcr.utils_training as utils
 
 
 def get_parameter_functions(model_name, optimization_mode):

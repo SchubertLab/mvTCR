@@ -8,10 +8,10 @@ import random
 import torch
 import numpy as np
 
-from tcr_embedding.models.mixture_modules.rna_model import RnaModel
-from tcr_embedding.models.mixture_modules.separate_model import SeparateModel
-from tcr_embedding.models.mixture_modules.poe import PoEModel
-from tcr_embedding.models.mixture_modules.moe import MoEModel
+from mvtcr.models.mixture_modules.rna_model import RnaModel
+from mvtcr.models.mixture_modules.separate_model import SeparateModel
+from mvtcr.models.mixture_modules.poe import PoEModel
+from mvtcr.models.mixture_modules.moe import MoEModel
 
 
 def fix_seeds(random_seed=42):
@@ -61,21 +61,14 @@ def load_data(source='10x'):
     return data
 
 
-def load_model(adata, path_model, base_path=None):
+def load_model(adata, path_model):
     available_gpu = torch.cuda.is_available()
-
-    if base_path is None:
-        base_path = os.path.dirname(__file__)
-        path_model = os.path.join(base_path, '..', path_model)
-    else:
-        path_model = os.path.join(base_path, path_model)
 
     if available_gpu:
         model_file = torch.load(path_model)
     else:
         print('Warning: cuda not available, loading model on CPU')
         model_file = torch.load(path_model, map_location=torch.device('cpu'))
-
 
     params_architecture = model_file['params_architecture']
     balanced_sampling = model_file['balanced_sampling']

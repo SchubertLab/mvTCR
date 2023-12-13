@@ -14,8 +14,8 @@ from abc import ABC, abstractmethod
 
 from .losses.kld import KLD
 #TODO
-from tcr_embedding.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
-from tcr_embedding.dataloader.DataLoader import initialize_prediction_loader
+from mvtcr.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
+from mvtcr.dataloader.DataLoader import initialize_prediction_loader
 
 from .optimization.knn_prediction import report_knn_prediction
 from .optimization.modulation_prediction import report_modulation_prediction
@@ -344,7 +344,7 @@ class VAEBaseModel(ABC):
 			latent.obsm[key] = adata.obs[key]
 		return latent
 	
-	def get_all_latent(self, adata, metadata, return_mean=True):
+	def get_all_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False):
 		"""
 		Get latent
 		:param adata:
@@ -371,6 +371,8 @@ class VAEBaseModel(ABC):
 				if return_mean:
 					z = mu
 				zs.append(z)
+			if copy_adata_obs:
+				zs.obs = adata.obs.copy()
 		return zs
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):

@@ -1,5 +1,5 @@
 import scanpy as sc
-import tcr_embedding.evaluation.Metrics as Metrics
+import mvtcr.evaluation.Metrics as Metrics
 
 
 def evaluate_pertubation(data_val, prediction, per_column, pertubation, indicator='pre', gene_set=None):

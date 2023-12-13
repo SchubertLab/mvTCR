@@ -195,7 +195,7 @@ class Preprocessing():
 		return train, val
 
 	@staticmethod
-	def stratified_group_shuffle_split(df, stratify_col, group_col, val_split, random_seed=42):
+	def stratified_group_shuffle_split(adata, stratify_col, group_col, val_split, random_seed=42):
 		"""
 		https://stackoverflow.com/a/63706321
 		Split the dataset into train and test. To create a val set, execute this code twice to first split test+val and test
@@ -215,6 +215,7 @@ class Preprocessing():
 		:param group_col: str key for the column containing the groups to be kept in the same set
 		:param val_split: float defining size of val split
 		"""
+		df = adata.obs
 		groups = df.groupby(stratify_col)
 		all_train = []
 		all_test = []
@@ -241,11 +242,11 @@ class Preprocessing():
 		return train, test
 	
 	@staticmethod
-	def preprocessing_pipeline(adata, clonotype_key_added, column_cdr3a, column_cdr3b, cond_vars, val_split, group_col, random_seed=42):
+	def preprocessing_pipeline(adata, clonotype_key_added, airr_name, cond_vars, val_split, group_col, random_seed=42):
 		
 		if Preprocessing.check_if_valid_adata(adata):
 			Preprocessing.encode_clonotypes(adata, key_added=clonotype_key_added)
-			Preprocessing.encode_tcr(adata, column_cdr3a, column_cdr3b)
+			Preprocessing.encode_tcr(adata, airr_name=airr_name)
 
 			for var in cond_vars:
 				Preprocessing.encode_conditional_var(adata, var)

@@ -45,38 +45,3 @@ def suggest_params(trial):
         },
     }
     return params
-'''
-Haniffa pub
-def suggest_params(trial):
-    params = {'batch_size': 512,
-            'learning_rate': 0.00046187266176987815,
-            'loss_weights': [1.0, 0.0018852035668153622, 1.2164799921249682e-08],
-            'joint': {'activation': 'leakyrelu',
-            'batch_norm': True,
-            'dropout': 0.0,
-            'hdim': 200,
-            'losses': ['MSE', 'CE'],
-            'num_layers': 2,
-            'shared_hidden': [300, 300],
-            'zdim': 35,
-            'c_embedding_dim': 20,
-            'num_conditional_labels': 94,
-            'cond_dim': 20,
-            'cond_input': True},
-            'rna': {'activation': 'leakyrelu',
-            'batch_norm': True,
-            'dropout': 0.0,
-            'gene_hidden': [1500, 1500],
-            'num_layers': 2,
-            'output_activation': 'linear',
-            'xdim': 5000},
-            'tcr': {'embedding_size': 64,
-            'num_heads': 4,
-            'forward_expansion': 4,
-            'encoding_layers': 1,
-            'decoding_layers': 1,
-            'dropout': 0.3,
-            'max_tcr_length': 27,
-            'num_seq_labels': 24}}
-    return params
-'''

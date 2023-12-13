@@ -1,6 +1,6 @@
 import operator
-from tcr_embedding.evaluation.WrapperFunctions import get_model_prediction_function
-from tcr_embedding.evaluation.kNN import run_knn_within_set_evaluation
+from mvtcr.evaluation.WrapperFunctions import get_model_prediction_function
+from mvtcr.evaluation.kNN import run_knn_within_set_evaluation
 
 
 def report_pseudo_metric(adata, model, optimization_mode_params, epoch, comet):

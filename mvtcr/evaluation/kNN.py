@@ -1,4 +1,4 @@
-import tcr_embedding.evaluation.Metrics as Metrics
+import mvtcr.evaluation.Metrics as Metrics
 import scanpy as sc
 import numpy as np
 
@@ -32,6 +32,7 @@ def run_knn_within_set_evaluation(data_full, embedding_function, prediction_labe
 
         latent_tmp = latent_tmp[(latent_tmp.obsm[prediction_label] != -99).to_numpy()]
         latent_tmp = latent_tmp[~latent_tmp.obsm[prediction_label].isnull()]'''
+        #TODO n_neighbors 2? magic number?
         sc.pp.neighbors(latent_tmp, n_neighbors=2, knn=True)
         scores[f'weighted_f1_{prediction_label}'] = Metrics.get_knn_f1_within_set(latent_tmp, prediction_label)
     return scores

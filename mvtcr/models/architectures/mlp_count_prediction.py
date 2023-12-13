@@ -1,4 +1,4 @@
-from tcr_embedding.models.architectures.mlp import MLP
+from mvtcr.models.architectures.mlp import MLP
 
 
 def build_mlp(params, n_in, n_out):
