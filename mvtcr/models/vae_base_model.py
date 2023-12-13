@@ -316,7 +316,7 @@ class VAEBaseModel(ABC):
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
 		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
-												  conditional=self.conditional)
+												  conditional=self.conditional, copy_adata_obs=False)
 		zs = []
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
@@ -342,9 +342,12 @@ class VAEBaseModel(ABC):
 		#change obs to obsm
 		for key in metadata:
 			latent.obsm[key] = adata.obs[key]
+		
+		if copy_adata_obs:
+				latent.obs = adata.obs.copy()
 		return latent
 	
-	def get_all_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False):
+	def get_all_latent(self, adata, metadata, return_mean=True):
 		"""
 		Get latent
 		:param adata:
@@ -371,8 +374,6 @@ class VAEBaseModel(ABC):
 				if return_mean:
 					z = mu
 				zs.append(z)
-			if copy_adata_obs:
-				zs.obs = adata.obs.copy()
 		return zs
 
 	def predict_rna_from_latent(self, adata_latent, metadata=None):
