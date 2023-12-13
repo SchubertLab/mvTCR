@@ -307,7 +307,7 @@ class VAEBaseModel(ABC):
 		return False
 
 	# <- prediction functions ->
-	def get_latent(self, adata, metadata, return_mean=True):
+	def get_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False):
 		"""
 		Get latent
 		:param adata:
@@ -316,7 +316,7 @@ class VAEBaseModel(ABC):
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
 		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
-												  conditional=self.conditional, copy_adata_obs=False)
+												  conditional=self.conditional)
 		zs = []
 		with torch.no_grad():
 			self.model = self.model.to(self.device)
@@ -342,7 +342,7 @@ class VAEBaseModel(ABC):
 		#change obs to obsm
 		for key in metadata:
 			latent.obsm[key] = adata.obs[key]
-		
+		#TODO who calls this function so this can be updated as in tutorial 
 		if copy_adata_obs:
 				latent.obs = adata.obs.copy()
 		return latent
