@@ -338,7 +338,7 @@ class VAEBaseModel(ABC):
 				zs.append(z)
 		latent = sc.AnnData.concatenate(*zs)
 		latent.obs.index = adata.obs.index
-		#TODO
+		#TODO done?
 		#change obs to obsm
 		for key in metadata:
 			latent.obsm[key] = adata.obs[key]

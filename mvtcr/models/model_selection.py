@@ -122,8 +122,11 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
     return model.best_optimization_metric
 
 
-def run_model_selection(adata, params_experiment, params_optimization, num_samples, timeout=None, n_jobs=1):
-    sampler = optuna.samplers.TPESampler(seed=42)  # Make the sampler behave in a deterministic way.
+def run_model_selection(adata, params_experiment, params_optimization, num_samples, timeout=None, n_jobs=1, sampler_seed=None):
+    if isinstance(sampler_seed, int):
+        sampler = optuna.samplers.TPESampler(seed=sampler_seed)
+    else:
+        sampler = optuna.samplers.TPESampler(seed=sampler_seed)
 
     direction = get_direction(params_optimization['name'])
 

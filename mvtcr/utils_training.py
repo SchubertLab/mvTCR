@@ -15,6 +15,7 @@ from mvtcr.models.mixture_modules.moe import MoEModel
 
 
 def fix_seeds(random_seed=42):
+    #TODO can fix sampler seed here already?
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     random.seed(random_seed)

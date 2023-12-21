@@ -1,6 +1,8 @@
 import logging
 import numpy as np
 import scirpy as ir
+from muon import MuData
+from anndata import AnnData
 from tqdm import tqdm
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import GroupShuffleSplit
@@ -254,6 +256,25 @@ class Preprocessing():
 			train, val = Preprocessing.group_shuffle_split(adata, group_col, val_split, random_seed)
 			adata.obs['set'] = 'train'
 			adata.obs.loc[val.obs.index, 'set'] = 'val'
+
+	@staticmethod
+	def mudata_to_adata(mdata, gex_id='gex', tcr_id='tcr'):
+		adata = mdata[gex_id]
+		adata.obsm['airr'] = mdata[tcr_id].obsm['airr']
+		return adata
+
+
+	@staticmethod
+	def adata_to_mudata(adata, gex_id='gex', tcr_id='tcr'):
+		adata_tcr = AnnData(adata.X)
+		adata_tcr.obs_names = adata.obs_names
+		adata_tcr.var_names = adata.var_names
+		adata_tcr.obsm['airr'] = adata.obsm['airr']
+
+		del adata.obsm['airr']
+
+		mdata = MuData({gex_id: adata, tcr_id: adata_tcr})
+		return mdata
 
 
 def encode_tcr(adata, column_cdr3a, column_cdr3b, pad):
