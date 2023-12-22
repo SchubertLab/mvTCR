@@ -140,8 +140,14 @@ def run_model_selection(adata, params_experiment, params_optimization, num_sampl
     study.optimize(lambda trial: objective(trial, adata, suggest_params, params_experiment, params_optimization),
                    n_trials=num_samples, timeout=timeout, n_jobs=n_jobs)
 
-    pruned_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.PRUNED]
-    complete_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.COMPLETE]
+    try:
+        #optuna >=3.0
+        pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+        complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    except:
+        #optuna <3.0
+        pruned_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.PRUNED]
+        complete_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.COMPLETE]
 
     print('Study statistics:')
     print(f'  Number of finished trials: {len(study.trials)}')

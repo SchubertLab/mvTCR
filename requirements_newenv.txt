@@ -1,0 +1,13 @@
+comet-ml
+pandas
+tqdm
+scikit-learn
+anndata
+leidenalg
+numba
+numpy
+optuna
+scanpy
+scirpy
+scrublet
+umap-learn
