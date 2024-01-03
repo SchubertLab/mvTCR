@@ -22,6 +22,9 @@ We provide tutorials in the following notebooks:
 
 The notebooks are run on a subsampled dataset and can be executed within 15 minutes each. The expected output is provided in each notebook. 
 
+## Computational Ressources
+To train mvTCR a machine with GPU support is required. The hyperparameter optimization shown in our manuscript was performed on either a one single GPU machine with 32GB of memory or a 4-GPU node with 512GB of memory. In the latter case, the HPO can be parallelized to train 4 models simultaneously. The required memory scales with the dataset size. As a reference, 8GBs of RAM were sufficient to train mvTCR on our preprocessed 10x dataset (>60k cells).
+
 ## Reproducability
 To reproduce the results of the paper, please refer to: https://github.com/SchubertLab/mvTCR_reproducibility
 
