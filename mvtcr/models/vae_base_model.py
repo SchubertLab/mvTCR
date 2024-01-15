@@ -13,7 +13,6 @@ import scanpy as sc
 from abc import ABC, abstractmethod
 
 from .losses.kld import KLD
-#TODO
 from mvtcr.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
 from mvtcr.dataloader.DataLoader import initialize_prediction_loader
 
@@ -338,11 +337,9 @@ class VAEBaseModel(ABC):
 				zs.append(z)
 		latent = sc.AnnData.concatenate(*zs)
 		latent.obs.index = adata.obs.index
-		#TODO done? yes?
-		#change obs to obsm
+		
 		for key in metadata:
-			latent.obsm[key] = adata.obs[key]
-		#TODO who calls this function so this can be updated as in tutorial 
+			latent.obs[key] = adata.obs[key]
 		if copy_adata_obs:
 				latent.obs = adata.obs.copy()
 		return latent

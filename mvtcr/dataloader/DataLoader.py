@@ -42,7 +42,7 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
 
     tcr_length_train = tcr_length[train_mask].tolist()
     tcr_length_val = tcr_length[~train_mask].tolist()
-    #TODO metadata in obs?
+    
     metadata_train = adata.obs[metadata][train_mask].to_numpy()
     metadata_val = adata.obs[metadata][~train_mask].to_numpy()
  

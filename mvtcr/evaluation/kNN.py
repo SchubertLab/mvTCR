@@ -20,10 +20,7 @@ def run_knn_within_set_evaluation(data_full, embedding_function, prediction_labe
     scores = {}
     sc.pp.neighbors(latent_tmp, n_neighbors=2, knn=True)
     for prediction_label in prediction_labels:
-        #TODO Design choice: all pred labels in obsm? mixture is weird. filter really needed or nans handled elsewhere?
-        #latent_tmp = latent_tmp[(latent_tmp.obsm[prediction_label] != -1).to_numpy()]
-        #TODO n_neighbors 2? magic number? --> lowest possible number
-        #sc.pp.neighbors(latent_tmp, n_neighbors=2, knn=True)
-        #TODO latent tmp for f1 or calc just a knn graph and eval with that --> speed and mem efficient?
+        latent_tmp = latent_tmp[(latent_tmp.obs[prediction_label] != -99).to_numpy()]
+        #IDEA latent tmp for f1 or calc just a knn graph and eval with that --> speed and mem efficient?
         scores[f'weighted_f1_{prediction_label}'] = Metrics.get_knn_f1_within_set(latent_tmp, prediction_label)
     return scores
