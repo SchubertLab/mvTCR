@@ -1,4 +1,6 @@
 # mvTCR
+[![PyPI version](https://img.shields.io/pypi/v/mvtcr.svg)](https://pypi.org/project/mvtcr)
+[![PyPIDownloads](https://pepy.tech/badge/mvtcr)](https://pepy.tech/project/mvtcr)
 
 ## Install
 ### Linux and Windows
