@@ -24,7 +24,7 @@ def get_knn_classification(data_atlas, data_query, labels_atlas, labels_query, n
     :return:
     """
 
-    clf = KNeighborsClassifier(num_neighbors, weights)
+    clf = KNeighborsClassifier(num_neighbors, weights=weights)
     clf.fit(data_atlas, labels_atlas)
 
     labels_predicted = clf.predict(data_query)

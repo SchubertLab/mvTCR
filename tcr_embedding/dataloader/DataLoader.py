@@ -45,6 +45,14 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
     metadata_train = adata.obs[metadata][train_mask].to_numpy()
     metadata_val = adata.obs[metadata][~train_mask].to_numpy()
 
+    if labels is not None:
+        labels = adata.obs[labels].to_numpy()
+        labels_train = labels[train_mask]
+        labels_val = labels[~train_mask]
+    else:
+        labels_train = None
+        labels_val = None
+
     if conditional is not None:
         conditional_train = adata.obsm[conditional][train_mask]
         conditional_val = adata.obsm[conditional][~train_mask]
@@ -53,9 +61,9 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
         conditional_val = None
 
     train_dataset = JointDataset(rna_train, tcr_train, tcr_length_train, metadata_train,
-                                 None, conditional_train)
+                                 labels_train, conditional_train)
     val_dataset = JointDataset(rna_val, tcr_val, tcr_length_val, metadata_val,
-                               None, conditional_val)
+                               labels_val, conditional_val)
 
     return train_dataset, val_dataset, train_mask
 
