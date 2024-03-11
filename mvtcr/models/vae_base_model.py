@@ -11,6 +11,8 @@ from tqdm import tqdm
 from collections import defaultdict
 import scanpy as sc
 from abc import ABC, abstractmethod
+from sklearn.metrics import f1_score
+import operator
 
 from .losses.kld import KLD
 from mvtcr.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
@@ -98,7 +100,32 @@ class VAEBaseModel(ABC):
 		self.supervised_model = None
 		if self.label_key is not None:
 			assert self.params_supervised is not None, 'Please specify parameters for supervised model'
-			self.supervised_model = None  # todo
+
+			hidden_neurons = [self.params_supervised['hidden_neurons']] * self.params_supervised['num_hidden_layers']
+			hidden_neurons = [self.params_joint['zdim']] + hidden_neurons + [
+				max(7, adata.obs[label_key].unique().max() + 1)]
+
+			layers = []
+			for i in range(len(hidden_neurons) - 2):
+				layers.append(nn.Linear(hidden_neurons[i], hidden_neurons[i + 1]))
+				if self.params_supervised['batch_norm']:
+					layers.append(nn.BatchNorm1d(hidden_neurons[i + 1]))
+				if self.params_supervised['activation'] == 'relu':
+					layers.append(nn.ReLU())
+				elif self.params_supervised['activation'] == 'tanh':
+					layers.append(nn.Tanh())
+				elif self.params_supervised['activation'] == 'sigmoid':
+					layers.append(nn.Sigmoid())
+				elif self.params_supervised['activation'] == 'linear':
+					pass
+				else:
+					raise ValueError(f'Invalid activation: {self.params_supervised["activation"]}')
+				if self.params_supervised['dropout'] > 0:
+					layers.append(nn.Dropout(self.params_supervised['dropout']))
+
+			layers.append(nn.Linear(hidden_neurons[-2], hidden_neurons[-1]))
+
+			self.supervised_model = nn.Sequential(*layers)
 
 		# datasets
 		if metadata is None:
@@ -115,13 +142,14 @@ class VAEBaseModel(ABC):
 		if self.balanced_sampling is not None and self.balanced_sampling not in self.metadata:
 			self.metadata.append(self.balanced_sampling)
 
-		self.data_train, self.data_val = initialize_data_loader(new_adata, self.metadata, self.conditional, self.label_key,
+		self.data_train, self.data_val = initialize_data_loader(new_adata, self.metadata, self.conditional,
+																self.label_key,
 																self.balanced_sampling, self.batch_size,
 																beta_only=self.beta_only)
 
 	def add_new_embeddings(self, num_new_embeddings):
 		cond_emb_tmp = self.model.cond_emb.weight.data
-		self.model.cond_emb = torch.nn.Embedding(cond_emb_tmp.shape[0]+num_new_embeddings, cond_emb_tmp.shape[1])
+		self.model.cond_emb = torch.nn.Embedding(cond_emb_tmp.shape[0] + num_new_embeddings, cond_emb_tmp.shape[1])
 		self.model.cond_emb.weight.data[:cond_emb_tmp.shape[0]] = cond_emb_tmp
 
 	def freeze_all_weights_except_cond_embeddings(self):
@@ -176,14 +204,17 @@ class VAEBaseModel(ABC):
 		# raise ValueError(f'length of loss_weights must be 3, 4 (supervised) or None.')
 
 		self.model = self.model.to(self.device)
+		self.supervised_model = self.supervised_model.to(self.device)
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learning_rate)
 
 		for epoch in tqdm(range(n_epochs)):
 			self.model.train()
+			self.supervised_model.train()
 			train_loss_summary = self.run_epoch(epoch, phase='train')
 			self.log_losses(train_loss_summary, epoch)
 
 			self.model.eval()
+			self.supervised_model.eval()
 			with torch.no_grad():
 				val_loss_summary = self.run_epoch(epoch, phase='val')
 				self.log_losses(val_loss_summary, epoch)
@@ -202,13 +233,15 @@ class VAEBaseModel(ABC):
 		tcr_loss_total = []
 		kld_loss_total = []
 		cls_loss_total = []
-		cls_acc_total = []
+		ys = []
+		y_preds = []
 
 		for rna, tcr, seq_len, _, labels, conditional in data:
 			if rna.shape[0] == 1 and phase == 'train':
 				continue  # BatchNorm cannot handle batches of size 1 during training phase
 			rna = rna.to(self.device)
 			tcr = tcr.to(self.device)
+			labels = labels.to(self.device)
 
 			if self.conditional is not None:
 				conditional = conditional.to(self.device)
@@ -221,12 +254,12 @@ class VAEBaseModel(ABC):
 			loss = kld_loss + rna_loss + tcr_loss
 
 			if self.supervised_model is not None:
-				prediction_label = self.forward_supervised(z)
-				cls_acc = torch.sum(torch.eq(prediction_label, labels))
-				cls_loss = self.calculate_classification_loss(prediction_label, labels)
-				loss += cls_loss
+				y_pred = self.supervised_model(z)
+				cls_loss = self.loss_function_class(y_pred, labels)
+				loss += self.params_supervised['loss_weights_sv'] * cls_loss
 				cls_loss_total.append(cls_loss)
-				cls_acc_total.append(cls_acc)
+				ys.append(labels.detach())
+				y_preds.append(y_pred.detach())
 
 			if phase == 'train':
 				self.run_backward_pass(loss)
@@ -253,7 +286,11 @@ class VAEBaseModel(ABC):
 		if self.supervised_model is not None:
 			cls_loss_total = torch.stack(cls_loss_total).mean().item()
 			summary_losses[f'{phase} CLS Loss'] = cls_loss_total
-			summary_losses[f'{phase} CLS Accuracy'] = cls_acc_total
+			ys = torch.cat(ys, dim=0)
+			y_preds = torch.cat(y_preds, dim=0)
+			summary_losses[f'{phase} CLS F1'] = f1_score(y_preds.argmax(1).detach().cpu(), ys.cpu(), average='weighted')
+
+		self.summary_losses = summary_losses
 
 		return summary_losses
 
@@ -283,6 +320,8 @@ class VAEBaseModel(ABC):
 		elif name == 'pseudo_metric':
 			score, relation = report_pseudo_metric(self.adata, self, self.optimization_mode_params,
 												   epoch, self.comet)
+		elif name == 'supervised':
+			score, relation = self.summary_losses['val CLS F1'], operator.gt
 		else:
 			raise ValueError('Unknown Optimization mode')
 		if self.best_optimization_metric is None or relation(score, self.best_optimization_metric):
@@ -343,7 +382,7 @@ class VAEBaseModel(ABC):
 		if copy_adata_obs:
 				latent.obs = adata.obs.copy()
 		return latent
-	
+
 	def get_all_latent(self, adata, metadata, return_mean=True):
 		"""
 		Get latent
@@ -395,31 +434,40 @@ class VAEBaseModel(ABC):
 			rnas.obs[metadata] = adata_latent.obs[metadata]
 		return rnas
 
-	def predict_label(self, adata):
-		data, _ = initialize_data_loader(adata, None, self.conditional, self.label_key,
-										 None, self.batch_size, beta_only=self.beta_only)
-		prediction_total = []
+	def predict_label(self, adata, use_mean=True):
+		data_embed = initialize_prediction_loader(adata, [], self.batch_size, beta_only=self.beta_only,
+												  conditional=self.conditional)
+
+		ys = []
 		with torch.no_grad():
-			for rna, tcr, seq_len, metadata_batch, labels, conditional in data:
+			self.model = self.model.to(self.device)
+			self.model.eval()
+			self.supervised_model = self.supervised_model.to(self.device)
+			self.supervised_model.eval()
+			for rna, tcr, seq_len, _, labels, conditional in data_embed:
 				rna = rna.to(self.device)
 				tcr = tcr.to(self.device)
+				seq_len = seq_len.to(self.device)
 
 				if self.conditional is not None:
 					conditional = conditional.to(self.device)
 				else:
 					conditional = None
+				z, mu, _, _, _ = self.model(rna, tcr, seq_len, conditional)
+				if use_mean:
+					z = mu
+				z = self.model.get_latent_from_z(z)
+				y = self.supervised_model(z)
+				ys.append(y)
+		ys = torch.cat(ys, dim=0)
 
-				z = self.model(rna, tcr, seq_len, conditional)
-				prediction = self.forward_supervised(z)
-				prediction_total.append(prediction)
-		prediction_total = torch.stack(prediction_total).cpu().detach().numpy()
-		return prediction_total
+		return ys
 
 	# <- semi-supervised model ->
 	def forward_supervised(self, z):
 		z_ = self.model.get_latent_from_z(z)
 		prediction = self.supervised_model(z_)
-		raise prediction
+		return prediction
 
 	# <- loss functions ->
 	@abstractmethod
@@ -439,7 +487,7 @@ class VAEBaseModel(ABC):
 
 	def calculate_classification_loss(self, prediction, labels):
 		loss = self.loss_function_class(prediction, labels)
-		loss = self.loss_weights[3] * loss
+		loss = self.params_supervised['loss_weights_sv'] * loss
 		return loss
 
 	def get_kl_annealing_factor(self, epoch):
@@ -474,12 +522,16 @@ class VAEBaseModel(ABC):
 					  'label_key': self.label_key,
 					  'model_type': self.model_type,
 					  }
+		if self.supervised_model is not None:
+			model_file['supervised_model'] = self.supervised_model.state_dict()
 		torch.save(model_file, filepath)
 
 	def load(self, filepath, map_location=torch.device('cuda')):
 		""" Load model for evaluation / inference"""
 		model_file = torch.load(os.path.join(filepath), map_location=map_location)
 		self.model.load_state_dict(model_file['state_dict'], strict=False)
+		if 'supervised_model' in model_file:
+			self.supervised_model.load_state_dict(model_file['supervised_model'], strict=True)
 		self._train_history = model_file['train_history']
 		self._val_history = model_file['val_history']
 		self.aa_to_id = model_file['aa_to_id']

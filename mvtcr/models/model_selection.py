@@ -9,7 +9,7 @@ import mvtcr.utils_training as utils
 def get_parameter_functions(model_name, optimization_mode):
     model_name = model_name.lower()
 
-    if optimization_mode not in ['pseudo_metric', 'knn_prediction', 'modulation_prediction']:
+    if optimization_mode not in ['pseudo_metric', 'knn_prediction', 'modulation_prediction', 'supervised']:
         model_name += '_equal'
 
     path_module = os.path.join(os.path.dirname(__file__), '..', 'config_optuna')
@@ -28,6 +28,7 @@ def get_direction(optimization_mode):
         'knn_prediction': 'maximize',
         'modulation_prediction': 'maximize',
         'reconstruction': 'minimize',
+        'supervised': 'maximize',
     }
     if optimization_mode in modes:
         return modes[optimization_mode]

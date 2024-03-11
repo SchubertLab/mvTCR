@@ -120,6 +120,7 @@ def select_model_by_name(model_name):
     """
     if model_name.startswith('debug_'):
         model_name = model_name.replace('debug_', '')
+    model_name = model_name.replace('_supervised', '')
 
     init_dict = {
         'rna': RnaModel,

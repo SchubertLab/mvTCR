@@ -37,7 +37,7 @@ class JointDataset(torch.utils.data.Dataset):
 		self.tcr_data = torch.LongTensor(tcr_data)
 
 		if labels is not None:
-			self.labels = torch.LongTensor(self.labels)
+			self.labels = torch.LongTensor(labels)
 		else:
 			self.labels = None
 
@@ -61,10 +61,10 @@ class JointDataset(torch.utils.data.Dataset):
 					   self.metadata[idx], False, self.conditional[idx]
 		else:
 			if self.conditional is None:
-				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_lenght[idx], \
+				return self.rna_data[idx], self.tcr_data[idx], self.tcr_length[idx], \
 					   self.metadata[idx], self.labels[idx], False
 			else:
-				return self.rna_data[idx], self.tcr_datas[idx], self.tcr_lenght[idx], \
+				return self.rna_data[idx], self.tcr_data[idx], self.tcr_length[idx], \
 					   self.metadata[idx], self.labels[idx], self.conditional[idx]
 
 
