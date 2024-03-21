@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import scirpy as ir
-from muon import MuData
+import muon as mu
 from anndata import AnnData
 from tqdm import tqdm
 from sklearn.preprocessing import OneHotEncoder
@@ -90,9 +90,9 @@ class Preprocessing():
 						'<': 22, '>': 23}
 			
 		if alpha_length_key:
-			adata.obsm[alpha_length_key] = junction_aa.VJ_1_junction_aa.str.len().values
+			adata.obs[alpha_length_key] = junction_aa.VJ_1_junction_aa.str.len().values
 		if beta_length_key:
-			adata.obsm[beta_length_key] = junction_aa.VDJ_1_junction_aa.str.len().values
+			adata.obs[beta_length_key] = junction_aa.VDJ_1_junction_aa.str.len().values
 
 	
 		if start_end_symbol:
@@ -168,7 +168,7 @@ class Preprocessing():
 		"""
 		enc = OneHotEncoder(sparse=False)
 		enc.fit(adata.obs[column_id].to_numpy().reshape(-1, 1))
-		adata.obsm[column_id] = enc.transform(adata.obs[column_id].to_numpy().reshape(-1, 1))
+		adata.obsm[column_id + "_ohe"] = enc.transform(adata.obs[column_id].to_numpy().reshape(-1, 1))
 		adata.uns[column_id + "_enc"] = enc.categories_
 
 	@staticmethod
@@ -243,8 +243,25 @@ class Preprocessing():
 		return train, test
 	
 	@staticmethod
-	def preprocessing_pipeline(adata, clonotype_key_added, airr_name, cond_vars, val_split, group_col, random_seed=42):
+	def preprocessing_pipeline(adata, 
+							clonotype_key_added,
+							airr_name, 
+							cond_vars, 
+							val_split, 
+							group_col, 
+							random_seed=42,
+							mudata_gex_key="gex",
+							mudata_airr_key="airr"):
 		
+		input_is_mu = mu.MuData.__instancecheck__(adata)
+		if input_is_mu:
+			print("MuData object deteced. Converting internally. Please double check, whether all fields are in the correct modality.")
+			mdata_obs_keys = adata[mudata_airr_key].obs_keys()
+			mdata_obsm_keys = adata[mudata_airr_key].obsm_keys()
+			mdata_uns_keys = adata[mudata_airr_key].uns_keys()
+			adata = Preprocessing.mudata_to_adata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
+										 obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
+
 		if Preprocessing.check_if_valid_adata(adata):
 			Preprocessing.encode_clonotypes(adata, key_added=clonotype_key_added)
 			Preprocessing.encode_tcr(adata, airr_name=airr_name)
@@ -255,22 +272,98 @@ class Preprocessing():
 			train, val = Preprocessing.group_shuffle_split(adata, group_col, val_split, random_seed)
 			adata.obs['set'] = 'train'
 			adata.obs.loc[val.obs.index, 'set'] = 'val'
+		
+		if input_is_mu:
+			mdata_obs_keys = mdata_obs_keys + ['receptor_type', 'receptor_subtype', 'chain_pairing', 'clonotype', 'clonotype_size', 'alpha_len', 'beta_len']
+			mdata_obsm_keys = mdata_obsm_keys + ['beta_seq', 'alpha_seq'] 
+			mdata_uns_keys = mdata_uns_keys + ['chain_indices', 'ir_dist_nt_identity', 'clonotype', 'aa_to_id']
+			adata = Preprocessing.adata_to_mudata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
+										 obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
 
-	@staticmethod
-	def mudata_to_adata(mdata, gex_id='gex', tcr_id='tcr'):
-		adata = mdata[gex_id]
-		adata.obsm['airr'] = mdata[tcr_id].obsm['airr']
+			for key in cond_vars:
+				uns_key = key + "_enc"
+				adata.uns[uns_key] = adata[mudata_gex_key].uns[uns_key]
+				adata.obsm[key + "_ohe"] = adata[mudata_gex_key].obsm[key]
+				
+				del(adata[mudata_gex_key].uns[uns_key], adata[mudata_gex_key].obsm[key])
+			
+			
+			adata.obs['set'] = adata[mudata_gex_key].obs['set']
+			del(adata[mudata_gex_key].obs['set'])
+
 		return adata
 
+	@staticmethod
+	def adata_to_mudata(adata, gex_id='gex', airr_id='airr', 
+					 obs_cols=[], obsm_cols=[], uns_cols=[], 
+					 keep_obs_cols=False, keep_obsm_cols=False, keep_uns_cols=False):
+		
+		adata_airr = AnnData(np.empty((adata.shape[0], 0)))
+		adata_airr.obs_names = adata.obs_names
+
+		for key in obs_cols:
+			try:
+				adata_airr.obs[key] = adata.obs[key]
+			except (KeyError, ValueError) as e:
+				print(f"Ups! Check .obs keys and dimensions:\n {e}")
+				return
+			if not keep_obs_cols:
+				del adata.obs[key]
+
+		for key in obsm_cols:
+			try:
+				adata_airr.obsm[key] = adata.obsm[key]
+			except (KeyError, ValueError) as e:
+				print(f"Ups! Check .obsm keys and dimensions:\n {e}")
+				return
+			if not keep_obsm_cols:
+				del adata.obsm[key]
+
+		for key in uns_cols:
+			try:
+				adata_airr.uns[key] = adata.uns[key]
+			except (KeyError) as e:
+				print(f"Ups! Check .uns keys:\n {e}")
+				return
+			if not keep_uns_cols:
+				del adata.uns[key]
+
+		return mu.MuData({gex_id: adata, airr_id: adata_airr})
+
 
 	@staticmethod
-	def adata_to_mudata(adata, gex_id='gex', tcr_id='tcr'):
-		adata_tcr = AnnData(adata.X)
-		adata_tcr.obs_names = adata.obs_names
-		adata_tcr.var_names = adata.var_names
-		adata_tcr.obsm['airr'] = adata.obsm['airr']
+	def mudata_to_adata(mdata, gex_id='gex', airr_id='airr', obs_cols=[], obsm_cols=[], uns_cols=[]):
+		adata = mdata[gex_id]
 
-		del adata.obsm['airr']
+		#Copy shared mdata.obs keys into adata.obs
+		for key in mdata.obs_keys():
+			if ":" in key:
+				continue
+			adata.obs[key] = mdata.obs[key]
 
-		mdata = MuData({gex_id: adata, tcr_id: adata_tcr})
-		return mdata
+		#Copy mdata.uns keys into adata.uns
+		for key in mdata.uns.keys():
+			adata.uns[key] = mdata.uns[key]
+
+		for key in obs_cols:
+			try:
+				adata.obs[key] = mdata[airr_id].obs[key]
+			except (KeyError, ValueError) as e:
+				print(f"Ups! Check .obs keys and dimensions:\n {e}")
+				return
+		
+		for key in obsm_cols:
+			try:
+				adata.obsm[key] = mdata[airr_id].obsm[key]
+			except (KeyError, ValueError) as e:
+				print(f"Ups! Check .obsm keys and dimensions:\n {e}")
+				return
+			
+		for key in uns_cols:
+			try:
+				adata.uns[key] = mdata[airr_id].uns[key]
+			except (KeyError) as e:
+				print(f"Ups! Check .uns keys and dimensions:\n {e}")
+				return
+			
+		return adata

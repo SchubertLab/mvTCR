@@ -32,10 +32,10 @@ def create_datasets(adata, val_split, metadata=None, conditional=None, labels=No
 
     if beta_only:
         tcr_seq = np.concatenate([adata.obsm['beta_seq']], axis=1)
-        tcr_length = np.vstack([adata.obsm['beta_len']]).T
+        tcr_length = np.vstack([adata.obs['beta_len']]).T
     else:
         tcr_seq = np.concatenate([adata.obsm['alpha_seq'], adata.obsm['beta_seq']], axis=1)
-        tcr_length = np.vstack([adata.obsm['alpha_len'], adata.obsm['beta_len']]).T
+        tcr_length = np.vstack([adata.obs['alpha_len'], adata.obs['beta_len']]).T
 
     tcr_train = tcr_seq[train_mask]
     tcr_val = tcr_seq[~train_mask]

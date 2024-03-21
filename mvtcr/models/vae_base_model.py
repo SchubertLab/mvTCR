@@ -10,6 +10,8 @@ import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
 import scanpy as sc
+import anndata as ad
+import muon
 from abc import ABC, abstractmethod
 from sklearn.metrics import f1_score
 import operator
@@ -17,6 +19,7 @@ import operator
 from .losses.kld import KLD
 from mvtcr.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
 from mvtcr.dataloader.DataLoader import initialize_prediction_loader
+from mvtcr.utils_preprocessing import Preprocessing
 
 from .optimization.knn_prediction import report_knn_prediction
 from .optimization.modulation_prediction import report_modulation_prediction
@@ -126,6 +129,7 @@ class VAEBaseModel(ABC):
 			layers.append(nn.Linear(hidden_neurons[-2], hidden_neurons[-1]))
 
 			self.supervised_model = nn.Sequential(*layers)
+			print(self.supervised_model)
 
 		# datasets
 		if metadata is None:
@@ -204,17 +208,23 @@ class VAEBaseModel(ABC):
 		# raise ValueError(f'length of loss_weights must be 3, 4 (supervised) or None.')
 
 		self.model = self.model.to(self.device)
-		self.supervised_model = self.supervised_model.to(self.device)
+		#if_supervised
+		if self.supervised_model is not None:
+			self.supervised_model = self.supervised_model.to(self.device)
 		self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=learning_rate)
 
 		for epoch in tqdm(range(n_epochs)):
 			self.model.train()
-			self.supervised_model.train()
+			#if_supervised
+			if self.supervised_model is not None:
+				self.supervised_model.train()
 			train_loss_summary = self.run_epoch(epoch, phase='train')
 			self.log_losses(train_loss_summary, epoch)
 
 			self.model.eval()
-			self.supervised_model.eval()
+			#if_supervised
+			if self.supervised_model is not None:
+				self.supervised_model.eval()
 			with torch.no_grad():
 				val_loss_summary = self.run_epoch(epoch, phase='val')
 				self.log_losses(val_loss_summary, epoch)
@@ -252,7 +262,7 @@ class VAEBaseModel(ABC):
 			kld_loss, z = self.calculate_kld_loss(mu, logvar, epoch)
 			rna_loss, tcr_loss = self.calculate_loss(rna_pred, rna, tcr_pred, tcr)
 			loss = kld_loss + rna_loss + tcr_loss
-
+			#if_supervised
 			if self.supervised_model is not None:
 				y_pred = self.supervised_model(z)
 				cls_loss = self.loss_function_class(y_pred, labels)
@@ -282,7 +292,7 @@ class VAEBaseModel(ABC):
 						  f'{phase} RNA Loss': rna_loss_total,
 						  f'{phase} TCR Loss': tcr_loss_total,
 						  f'{phase} KLD Loss': kld_loss_total}
-
+		#if_supervised
 		if self.supervised_model is not None:
 			cls_loss_total = torch.stack(cls_loss_total).mean().item()
 			summary_losses[f'{phase} CLS Loss'] = cls_loss_total
@@ -345,7 +355,7 @@ class VAEBaseModel(ABC):
 		return False
 
 	# <- prediction functions ->
-	def get_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False):
+	def get_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False, mudata_gex_key="gex", mudata_airr_key="airr"):
 		"""
 		Get latent
 		:param adata:
@@ -353,6 +363,14 @@ class VAEBaseModel(ABC):
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
+		if muon.MuData.__instancecheck__(adata):
+			mdata_obs_keys = adata[mudata_airr_key].obs_keys()
+			mdata_obsm_keys = adata[mudata_airr_key].obsm_keys()
+			mdata_uns_keys = adata[mudata_airr_key].uns_keys()
+			adata = Preprocessing.mudata_to_adata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
+											obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
+		
+
 		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
 												  conditional=self.conditional)
 		zs = []

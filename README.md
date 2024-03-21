@@ -7,9 +7,9 @@
 
 First create a new conda environment and install mvTCR via pip install:
 
-`conda create --name mvTCR python=3.8.8 -y && conda activate mvTCR && pip install mvtcr && conda install nb_conda_kernels -y`
+`conda create --name mvTCR python=3.10 -y && conda activate mvTCR && pip install mvtcr && conda install nb_conda_kernels -y`
 
-Then install PyTorch 1.8.0 with the correct CUDA Version following the command here: https://pytorch.org/get-started/previous-versions/
+Then install PyTorch 2.1.0 with the correct CUDA Version following the command here: https://pytorch.org/get-started/previous-versions/
 
 ### Installation Note
 The installation procedure will take approx. 10 minutes and has been tested on Windows 10 and Linux 4.18.0. For MAC with M1 chip, there are currently several dependencies not available. A machine with GPU- and CUDA-support is heavily encouraged.
