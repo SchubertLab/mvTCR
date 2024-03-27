@@ -11,6 +11,99 @@ from sklearn.model_selection import GroupShuffleSplit
 class Preprocessing():
 
 	@staticmethod
+	def check_if_input_is_mudata(func):
+		'''
+		Decorator function to support both adata and mudata as input to the preprocessing functions
+		'''
+		def wrapper(*args, mudata_gex_key="gex", mudata_airr_key="airr", **kwargs):
+			data = args[0]
+			input_is_mu = mu.MuData.__instancecheck__(data)
+			#converting to anndata
+			if input_is_mu:
+				print("MuData object deteced. Converting internally...")      
+				adata = data[mudata_gex_key].copy()
+				mu_obs_keys = data[mudata_airr_key].obs_keys()
+				mu_obsm_keys = data[mudata_airr_key].obsm_keys()
+				mu_uns_keys = data[mudata_airr_key].uns_keys()
+				#Copy shared data.obs keys into adata.obs
+				for key in data.obs_keys():
+					if ":" in key:
+						continue
+					adata.obs[key] = data.obs[key]
+				#Copy data.uns keys into adata.uns
+				for key in data.uns.keys():
+					adata.uns[key] = data.uns[key]
+				#Merging airr.obs and gex.obs
+				for key in mu_obs_keys:
+					try:
+						adata.obs[key] = data[mudata_airr_key].obs[key]
+					except (KeyError, ValueError) as e:
+						print(f"Ups! Check .obs keys and dimensions:\n {e}")
+						return
+				#Merging airr.obsm and gex.obsm
+				for key in mu_obsm_keys:
+					try:
+						adata.obsm[key] = data[mudata_airr_key].obsm[key]
+					except (KeyError, ValueError) as e:
+						print(f"Ups! Check .obsm keys and dimensions:\n {e}")
+						return
+				#Merging airr.uns and gex.uns
+				for key in mu_uns_keys:
+					try:
+						adata.uns[key] = data[mudata_airr_key].uns[key]
+					except (KeyError) as e:
+						print(f"Ups! Check .uns keys and dimensions:\n {e}")
+						return
+				args = (adata,) + args[1:]
+			#actual function call
+			#====================
+			func(*args, **kwargs)
+			#====================
+			#writing new data to old mudata obj
+			if input_is_mu:
+				func_name = func.__name__
+				if func_name == "check_if_valid_adata":
+					print("Not implemented for mudata.")
+				elif func_name == "encode_clonotypes":
+					data[mudata_airr_key].obs["receptor_type"] = adata.obs["receptor_type"]
+					data[mudata_airr_key].obs["receptor_subtype"] = adata.obs["receptor_subtype"]
+					data[mudata_airr_key].obs["chain_pairing"]  = adata.obs["chain_pairing"]
+					data[mudata_airr_key].obs[kwargs["key_added"]] = adata.obs[kwargs["key_added"]]
+					data[mudata_airr_key].obs[kwargs["key_added"] + "_size"] = adata.obs[kwargs["key_added"] + "_size"]
+					
+					data[mudata_airr_key].uns["chain_indices"] = adata.uns["chain_indices"]
+					data[mudata_airr_key].uns["ir_dist_nt_identity"] = adata.uns["ir_dist_nt_identity"]
+					data[mudata_airr_key].uns[kwargs["key_added"]]  = adata.uns[kwargs["key_added"]]
+					
+				elif func_name == "encode_tcr":
+					data[mudata_airr_key].obsm[kwargs["alpha_label_key"]] = adata.obsm[kwargs["alpha_label_key"]]
+					data[mudata_airr_key].obsm[kwargs["beta_label_key"]] = adata.obsm[kwargs["beta_label_key"]]
+					
+					data[mudata_airr_key].obs[kwargs["alpha_length_key"]] = adata.obs[kwargs["alpha_length_key"]]
+					data[mudata_airr_key].obs[kwargs["beta_length_key"]] = adata.obs[kwargs["beta_length_key"]]
+					
+					data[mudata_airr_key].uns["aa_to_id"] = adata.uns["aa_to_id"]
+					
+					if "start_end_symbol" in kwargs:
+						if kwargs["start_end_symbol"] == True:
+							data[mudata_airr_key].obsm[kwargs["start_end_symbol_seqs"]] = adata.obsm['start_end_symbol_seqs']                
+
+				elif func_name == "encode_conditional_var":
+					key = kwargs["column_id"]
+					data.uns[key + "_enc"] = adata.uns[key + "_enc"]
+					data.obsm[key + "_ohe"] = adata.obsm[key + "_ohe"]
+				
+				elif func_name == "group_shuffle_split":
+					data.obs["set"] = adata.obs["set"]
+				
+				elif func_name == "stratified_group_shuffle_split":
+					data.obs["set"] = adata.obs["set"]
+				del(adata)
+
+		return wrapper
+
+	@staticmethod
+	@check_if_input_is_mudata
 	def check_if_valid_adata(adata):
 		valid_adata = True
 		#expression matrix data checks
@@ -56,6 +149,7 @@ class Preprocessing():
 		return valid_adata
 
 	@staticmethod
+	@check_if_input_is_mudata
 	def encode_clonotypes(adata, key_added='clonotype'):
 		"""
 		Encode the clonotypes with scirpy
@@ -66,6 +160,7 @@ class Preprocessing():
 		ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only')
 
 	@staticmethod
+	@check_if_input_is_mudata
 	def encode_tcr(adata, airr_name='junction_aa', alpha_label_key='alpha_seq', alpha_length_key='alpha_len', beta_label_key='beta_seq', beta_length_key='beta_len', aa_encoding_dict=None, pad=None, start_end_symbol=False):
 		"""
 		Encodes the CDR3 alpha and CDR3 beta chain into numerical values
@@ -158,8 +253,8 @@ class Preprocessing():
 			# adata.obs[label_col] = token_ids
 			adata.obsm[label_col] = np.stack(token_ids)
 
-
 	@staticmethod
+	@check_if_input_is_mudata
 	def encode_conditional_var(adata, column_id):
 		"""
 		One-hot encode additional features in adata.obs. Column data will be transformed and the categories saved in adata.uns
@@ -172,6 +267,7 @@ class Preprocessing():
 		adata.uns[column_id + "_enc"] = enc.categories_
 
 	@staticmethod
+	@check_if_input_is_mudata
 	def group_shuffle_split(adata, group_col, val_split, random_seed=42):
 		'''
 		Grou-shuffle-split
@@ -193,9 +289,11 @@ class Preprocessing():
 
 		train = adata[train]
 		val = adata[val]
-		return train, val
+		adata.obs['set'] = 'train'
+		adata.obs.loc[val.obs.index, 'set'] = 'val'
 
 	@staticmethod
+	@check_if_input_is_mudata
 	def stratified_group_shuffle_split(adata, stratify_col, group_col, val_split, random_seed=42):
 		"""
 		https://stackoverflow.com/a/63706321
@@ -240,7 +338,8 @@ class Preprocessing():
 		train = df[df[group_col].isin(all_train)]
 		test = df[df[group_col].isin(all_test)]
 
-		return train, test
+		adata.obs['set'] = 'train'
+		adata.obs.loc[test.obs.index, 'set'] = 'val'
 	
 	@staticmethod
 	def preprocessing_pipeline(adata, 
@@ -269,11 +368,14 @@ class Preprocessing():
 			for var in cond_vars:
 				Preprocessing.encode_conditional_var(adata, var)
 			
+			Preprocessing.group_shuffle_split(adata, group_col, val_split, random_seed)
+			'''
 			train, val = Preprocessing.group_shuffle_split(adata, group_col, val_split, random_seed)
 			adata.obs['set'] = 'train'
 			adata.obs.loc[val.obs.index, 'set'] = 'val'
+			'''
 		
-		if input_is_mu:
+		if input_is_mu:   
 			mdata_obs_keys = mdata_obs_keys + ['receptor_type', 'receptor_subtype', 'chain_pairing', 'clonotype', 'clonotype_size', 'alpha_len', 'beta_len']
 			mdata_obsm_keys = mdata_obsm_keys + ['beta_seq', 'alpha_seq'] 
 			mdata_uns_keys = mdata_uns_keys + ['chain_indices', 'ir_dist_nt_identity', 'clonotype', 'aa_to_id']
@@ -329,7 +431,6 @@ class Preprocessing():
 				del adata.uns[key]
 
 		return mu.MuData({gex_id: adata, airr_id: adata_airr})
-
 
 	@staticmethod
 	def mudata_to_adata(mdata, gex_id='gex', airr_id='airr', obs_cols=[], obsm_cols=[], uns_cols=[]):
