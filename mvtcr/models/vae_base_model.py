@@ -11,7 +11,6 @@ from tqdm import tqdm
 from collections import defaultdict
 import scanpy as sc
 import anndata as ad
-import muon
 from abc import ABC, abstractmethod
 from sklearn.metrics import f1_score
 import operator
@@ -19,7 +18,7 @@ import operator
 from .losses.kld import KLD
 from mvtcr.dataloader.DataLoader import initialize_data_loader, initialize_latent_loader
 from mvtcr.dataloader.DataLoader import initialize_prediction_loader
-from mvtcr.utils_preprocessing import Preprocessing
+from mvtcr.utils_preprocessing import check_if_input_is_mudata
 
 from .optimization.knn_prediction import report_knn_prediction
 from .optimization.modulation_prediction import report_modulation_prediction
@@ -127,9 +126,7 @@ class VAEBaseModel(ABC):
 					layers.append(nn.Dropout(self.params_supervised['dropout']))
 
 			layers.append(nn.Linear(hidden_neurons[-2], hidden_neurons[-1]))
-
 			self.supervised_model = nn.Sequential(*layers)
-			print(self.supervised_model)
 
 		# datasets
 		if metadata is None:
@@ -355,7 +352,8 @@ class VAEBaseModel(ABC):
 		return False
 
 	# <- prediction functions ->
-	def get_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False, mudata_gex_key="gex", mudata_airr_key="airr"):
+	@check_if_input_is_mudata
+	def get_latent(self, adata, metadata, return_mean=True, copy_adata_obs=False):
 		"""
 		Get latent
 		:param adata:
@@ -363,14 +361,6 @@ class VAEBaseModel(ABC):
 		:param return_mean: bool, calculate latent space without sampling
 		:return: adata containing embedding vector in adata.X for each cell and the specified metadata in adata.obs
 		"""
-		if muon.MuData.__instancecheck__(adata):
-			mdata_obs_keys = adata[mudata_airr_key].obs_keys()
-			mdata_obsm_keys = adata[mudata_airr_key].obsm_keys()
-			mdata_uns_keys = adata[mudata_airr_key].uns_keys()
-			adata = Preprocessing.mudata_to_adata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
-											obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
-		
-
 		data_embed = initialize_prediction_loader(adata, metadata, self.batch_size, beta_only=self.beta_only,
 												  conditional=self.conditional)
 		zs = []
@@ -400,7 +390,8 @@ class VAEBaseModel(ABC):
 		if copy_adata_obs:
 				latent.obs = adata.obs.copy()
 		return latent
-
+	
+	#TODO here decorator as well?
 	def get_all_latent(self, adata, metadata, return_mean=True):
 		"""
 		Get latent
@@ -501,6 +492,7 @@ class VAEBaseModel(ABC):
 		:param epoch: current epoch as integer
 		:return:
 		"""
+		#TODO check for ambiguity
 		raise NotImplementedError('Implement this in the different model versions')
 
 	def calculate_classification_loss(self, prediction, labels):

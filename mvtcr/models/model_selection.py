@@ -2,10 +2,9 @@ import optuna
 import os
 import sys
 import importlib
-import muon as mu
 
 import mvtcr.utils_training as utils
-from mvtcr.utils_preprocessing import Preprocessing
+from mvtcr.utils_preprocessing import check_if_input_is_mudata
 
 def get_parameter_functions(model_name, optimization_mode):
     model_name = model_name.lower()
@@ -124,26 +123,15 @@ def objective(trial, adata_tmp, suggest_params, params_experiment_base, optimiza
         comet.end()
     return model.best_optimization_metric
 
-
+@check_if_input_is_mudata
 def run_model_selection(adata, 
                         params_experiment, 
                         params_optimization, 
                         num_samples, 
                         timeout=None, 
                         n_jobs=1, 
-                        sampler_seed=None, 
-                        mudata_gex_key="gex",
-						mudata_airr_key="airr"):
+                        sampler_seed=None):
     
-    if mu.MuData.__instancecheck__(adata):
-        print("MuData object deteced. Converting internally...")
-        mdata_obs_keys = adata[mudata_airr_key].obs_keys()
-        mdata_obsm_keys = adata[mudata_airr_key].obsm_keys()
-        mdata_uns_keys = adata[mudata_airr_key].uns_keys()
-        adata = Preprocessing.mudata_to_adata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
-                                        obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
-        print("Resulting adata:")
-        print(adata)
     if isinstance(sampler_seed, int):
         sampler = optuna.samplers.TPESampler(seed=sampler_seed)
     else:

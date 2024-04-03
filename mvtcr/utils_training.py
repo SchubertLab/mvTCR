@@ -7,17 +7,15 @@ import os
 import random
 import torch
 import numpy as np
-import muon as mu
 
 from mvtcr.models.mixture_modules.rna_model import RnaModel
 from mvtcr.models.mixture_modules.separate_model import SeparateModel
 from mvtcr.models.mixture_modules.poe import PoEModel
 from mvtcr.models.mixture_modules.moe import MoEModel
-from mvtcr.utils_preprocessing import Preprocessing
+from mvtcr.utils_preprocessing import check_if_input_is_mudata
 
 
 def fix_seeds(random_seed=42):
-    #TODO can fix sampler seed here already? --> would leave as is
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     random.seed(random_seed)
@@ -63,18 +61,8 @@ def load_data(source='10x'):
                                 f'Alternatively, as filename starting from the data folder.')
     return data
 
-
-def load_model(adata, path_model, mudata_gex_key="gex", mudata_airr_key="airr"):
-    if mu.MuData.__instancecheck__(adata):
-        print("MuData object deteced. Converting internally...")
-        mdata_obs_keys = adata[mudata_airr_key].obs_keys()
-        mdata_obsm_keys = adata[mudata_airr_key].obsm_keys()
-        mdata_uns_keys = adata[mudata_airr_key].uns_keys()
-        adata = Preprocessing.mudata_to_adata(adata, gex_id=mudata_gex_key, airr_id=mudata_airr_key, 
-                                        obs_cols=mdata_obs_keys, obsm_cols=mdata_obsm_keys, uns_cols=mdata_uns_keys)
-        print("Resulting adata:")
-        print(adata)
-
+@check_if_input_is_mudata
+def load_model(adata, path_model):
     available_gpu = torch.cuda.is_available()
 
     if available_gpu:
