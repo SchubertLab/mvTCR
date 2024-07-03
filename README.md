@@ -34,16 +34,17 @@ The experiments were run with mvTCR v0.1.3 together with PyTorch v1.8.0.
 
 If mvTCR is useful in your research, please cite:  
 ```
-@article {Drost2021.06.24.449733,
-	author = {Drost, Felix and An, Yang and Dratva, Lisa M and Lindeboom, Rik GH and Haniffa, Muzlifah and Teichmann, Sarah A and Theis, Fabian and Lotfollahi, Mohammad and Schubert, Benjamin},
-	title = {Integrating T-cell receptor and transcriptome for large-scale single-cell immune profiling analysis},
-	elocation-id = {2021.06.24.449733},
-	year = {2022},
-	doi = {10.1101/2021.06.24.449733},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2022/10/25/2021.06.24.449733},
-	eprint = {https://www.biorxiv.org/content/early/2022/10/25/2021.06.24.449733.full.pdf},
-	journal = {bioRxiv}
+@article {Drost2024,
+	author = {Drost, Felix and An, Yang and Bonafonte-Pardàs, Irene and Dratva, Lisa M. and Lindeboom, Rik G. H. and Haniffa, Muzlifah and Teichmann, Sarah A. and Theis, Fabian and Lotfollahi, Mohammad and Schubert, Benjamin},
+	title = {Multi-modal generative modeling for joint analysis of single-cell T cell receptor and gene expression data},
+	year = {2024},
+	doi = {10.1038/s41467-024-49806-9},
+	publisher = {Nature Communications},
+	URL = {https://doi.org/10.1038/s41467-024-49806-9},
+	journal = {Nature Communications},
+	volume = {15},
+	number = {1},
+	pages = {5577},
+	abstract = {Recent advances in single-cell immune profiling have enabled the simultaneous measurement of transcriptome and T cell receptor (TCR) sequences, offering great potential for studying immune responses at the cellular level. However, integrating these diverse modalities across datasets is challenging due to their unique data characteristics and technical variations. Here, to address this, we develop the multimodal generative model mvTCR to fuse modality-specific information across transcriptome and TCR into a shared representation. Our analysis demonstrates the added value of multimodal over unimodal approaches to capture antigen specificity. Notably, we use mvTCR to distinguish T cell subpopulations binding to SARS-CoV-2 antigens from bystander cells. Furthermore, when combined with reference mapping approaches, mvTCR can map newly generated datasets to extensive T cell references, facilitating knowledge transfer. In summary, we envision mvTCR to enable a scalable analysis of multimodal immune profiling data and advance our understanding of immune responses.}
 }
-
 ```
