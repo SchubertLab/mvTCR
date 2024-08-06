@@ -176,7 +176,7 @@ class Preprocessing():
 
 	@staticmethod
 	@check_if_input_is_mudata
-	def encode_clonotypes(adata, key_added='clonotype', small_clonotype_size=False):
+	def encode_clonotypes(adata, key_added='clonotype'):
 		"""
 		Encode the clonotypes with scirpy
 		:param adata: adata object
