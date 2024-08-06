@@ -82,13 +82,13 @@ def get_adjusted_random_score(labels_true, labels_predicted):
 
 def get_square_pearson(ground_truth, prediction):
     try:
-        x = np.average(ground_truth.X.A, axis=0)
+        x = np.average(ground_truth.X.toarray(), axis=0)
     except AttributeError:
         x = np.average(ground_truth.X, axis=0)
     try:
-        y = np.average(prediction.X.A, axis=0)
+        y = np.average(prediction.X.toarray(), axis=0)
     except AttributeError:
-        y = np.average(prediction.X, axis=0)
+        y = np.average(prediction.X.toarray(), axis=0)
     m, b, r_value, p_value, std_err = stats.linregress(x, y)
     r_squared = r_value**2
     report = {
@@ -103,7 +103,7 @@ def get_square_pearson(ground_truth, prediction):
 
 
 def get_knn_f1_within_set(latent, column_name):
-    con = latent.obsp['connectivities'].A.astype(bool)
+    con = latent.obsp['connectivities'].toarray().astype(bool)
     nearest_neighbor_label = [latent.obs[column_name].values[row].tolist()[0] for row in con]
     labels_true = latent.obs[column_name].values
     if torch.is_tensor(nearest_neighbor_label[0]):

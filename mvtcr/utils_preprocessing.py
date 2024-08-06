@@ -176,14 +176,20 @@ class Preprocessing():
 
 	@staticmethod
 	@check_if_input_is_mudata
-	def encode_clonotypes(adata, key_added='clonotype'):
+	def encode_clonotypes(adata, key_added='clonotype', small_clonotype_size=False):
 		"""
 		Encode the clonotypes with scirpy
 		:param adata: adata object
 		"""
 		ir.tl.chain_qc(adata)
 		ir.pp.ir_dist(adata)
-		ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only')
+		try:
+			ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only')
+		except TypeError as e:
+			print("Error in scirpy define_clonotypes. Trying with chunksize=1 & multiprocessing.")
+			print("https://github.com/SchubertLab/mvTCR/issues/15")
+			ir.tl.define_clonotypes(adata, key_added=key_added, receptor_arms='all', dual_ir='primary_only', chunksize=1)
+			print("Success!")
 
 	@staticmethod
 	@check_if_input_is_mudata
@@ -221,7 +227,6 @@ class Preprocessing():
 			if type(pad) is not bool:
 				pad += 2
 	
-
 		adata.uns['aa_to_id'] = aa_to_id
 
 		Preprocessing._aa_encoding(adata, junction_aa.VJ_1_junction_aa, ohe_col=None, label_col=beta_label_key, pad=pad, aa_to_id=None)
