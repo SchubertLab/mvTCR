@@ -6,7 +6,7 @@ long_description = (this_directory / "pypi_description.md").read_text()
 
 setup(
     name='mvtcr',
-    version='0.2.1',
+    version='0.2.1.2',
     description='mvTCR: A multimodal generative model to learn a unified representation across TCR sequences and scRNAseq data for joint analysis of single-cell immune profiling data',
     long_description=long_description,
     long_description_content_type='text/markdown',
